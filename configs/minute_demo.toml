@@ -1,0 +1,46 @@
+[data]
+warmup_days = 2
+
+[backtest]
+mode = "StatsEvery"
+start = "2023-12-04"
+end = "2023-12-08"
+frequency = "0930-1450-5"
+allow_os = false
+holding_period = 1
+forecast_period = 12
+groups = 5
+capital = 10000000.0
+
+[universe]
+kind = "all_a"
+
+[execution]
+fee_bps = 5.0
+participation = 0.01
+
+[operations]
+exclude_st = true
+st_unknown = "allow"
+
+[[factors]]
+name = "reversal12"
+kind = "reversal"
+lookback = 12
+weight = 0.7
+
+[[factors]]
+name = "lowvol24"
+kind = "volatility"
+lookback = 24
+weight = 0.3
+
+[output]
+dump = true
+directory = "/mnt/nas/qinml_cache/qsim_runs"
+name = "minute_demo"
+plots = true
+
+[stats]
+nIntvDelay = 1
+isTradeT1 = true

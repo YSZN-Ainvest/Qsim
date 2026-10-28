@@ -1,0 +1,47 @@
+[data]
+warmup_days = 2
+
+[backtest]
+mode = "StatsInterval"
+start = "2023-12-04"
+end = "2023-12-08"
+frequency = "0930-1450-5"
+allow_os = false
+holding_period = 1
+forecast_period = 12
+groups = 5
+capital = 10000000.0
+
+[stats]
+nbar = 2
+priceMode = "vwap"
+cleareod = false
+# Empty means all scheduled bars fire. Example: ["1000", "1030", "1400"]
+signal_times = []
+
+[execution]
+fee_bps = 5.0
+participation = 0.01
+enforce_t1 = true
+
+[operations]
+exclude_st = true
+st_unknown = "allow"
+
+[[factors]]
+name = "reversal12"
+kind = "reversal"
+lookback = 12
+weight = 0.7
+
+[[factors]]
+name = "lowvol24"
+kind = "volatility"
+lookback = 24
+weight = 0.3
+
+[output]
+dump = true
+directory = "/mnt/nas/qinml_cache/qsim_runs"
+name = "stats_interval_demo"
+plots = true

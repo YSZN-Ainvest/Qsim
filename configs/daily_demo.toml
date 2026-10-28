@@ -1,0 +1,63 @@
+# Runnable plumbing demo. Historical ST unknowns are explicitly allowed here.
+[data]
+root = "/mnt/nas/qinml_cache/backtesting/20260930"
+raw_root = "/mnt/nas/data/whole_history"
+warmup_days = 30
+
+[backtest]
+start = "2023-01-03"
+end = "2023-03-31"
+frequency = "0800"
+allow_os = false
+os_start = "2024-01-01"
+mode = "StatsEvery"
+holding_period = 1
+forecast_period = 5
+groups = 10
+capital = 10000000.0
+
+[universe]
+kind = "all_a"
+
+[execution]
+fee_bps = 5.0
+sell_tax_bps = 0.0
+slippage_bps = 0.0
+borrow_bps_annual = 0.0
+participation = 0.01
+limit_filter = true
+suspension_filter = true
+reject_bad_vwap = true
+short_mode = "synthetic"
+
+[operations]
+exclude_st = true
+st_unknown = "allow"
+winsor_mad = 5.0
+standardize = true
+neutralize_styles = []
+neutralize_industries = []
+min_cross_section = 20
+
+[[factors]]
+name = "momentum20"
+kind = "momentum"
+lookback = 20
+weight = 0.6
+
+[[factors]]
+name = "reversal5"
+kind = "reversal"
+lookback = 5
+weight = 0.4
+
+[output]
+dump = true
+directory = "/mnt/nas/qinml_cache/qsim_runs"
+name = "daily_demo"
+plots = true
+positions = false
+
+[stats]
+nIntvDelay = 1
+isTradeT1 = true
