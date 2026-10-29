@@ -12,10 +12,11 @@ from .data import MarketData
 from .factors import FactorModel
 from .metrics import correlation,daily_curve,report_metrics
 from .operations import groups_from_score
-from .pit import PITTable,boolean_values
+from .pit import PITTable
 from .report import dump_results
 from .stats import StatsEvery,StatsInterval,portfolio_weights,aggregate_window
 from .target_engine import TargetLedger
+from .alpha_events import decision_time, eligible_at, signal_plan
 
 
 def run_stats(config):
@@ -45,37 +46,19 @@ def run_stats(config):
     horizon=s['ileadEach'] or b['forecast_period']
     for day_index,date in enumerate(market.run_dates):
         day=market.load_day(date);cal=day.calendar
-        clocks=['0800' if market.freq=='1d' else row.bar_start.strftime('%H%M') for _,row in cal.iterrows()]
-        if s['signal_times'] and not set(s['signal_times'])<=set(clocks):
-            raise ValueError('signal_times must be present on the configured sampling grid')
-        effective=[j for j,clock in enumerate(clocks) if not s['signal_times'] or clock in s['signal_times']]
-        if every:
-            plan={j:[j+s['nIntvDelay']-1] for j in effective if j+s['nIntvDelay']-1<len(cal)}
-            skipped_delay+=len(effective)-len(plan)
-        else:
-            plan={effective[p]:effective[p:p+s['nbar']] for p in range(0,len(effective),s['nbar'])}
-        if not plan:
-            raise ValueError('No executable signals: check signal_times and nIntvDelay')
+        clocks,plan,skipped=signal_plan(cal,market.freq,config)
+        skipped_delay+=skipped
         for j in plan:
             slot=clocks[j] if every else 'interval'
             if slot not in ledgers:
                 ledgers[slot]=TargetLedger(config,symbols)
         executions={};first=True
         for j,row in cal.iterrows():
-            when=pd.Timestamp(date+' 08:00',tz='Asia/Shanghai') if market.freq=='1d' else row.bar_start
+            when=decision_time(date,row,market.freq)
             data=day.bar(j)
             if j in plan:
-                eligible=day.member.copy()
-                if universe:
-                    eligible &= boolean_values(universe.at(when).in_universe)==1
-                if config['execution']['suspension_filter']:
-                    eligible &= day.suspended==0
-                if o['exclude_st']:
-                    values=boolean_values(st.at(when).is_st) if st else day.st
-                    unknown=eligible&~np.isfinite(values);unknown_st+=int(unknown.sum())
-                    if unknown.any() and o['st_unknown']=='error':
-                        raise ValueError(f'{date}: historical ST status missing for {unknown.sum()} securities')
-                    eligible &= (values==0)|(np.isnan(values)&(o['st_unknown']=='allow'))
+                eligible,unknown=eligible_at(day,when,config,st,universe)
+                unknown_st+=unknown
                 score=model.compute(when,eligible)
                 groups=groups_from_score(score,b['groups'])
                 alpha=portfolio_weights(groups,b['groups'])

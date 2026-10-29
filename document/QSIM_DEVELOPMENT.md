@@ -11,9 +11,11 @@
 - `v0.2.0` 标签指向初始提交 `f6c5158a00460b6ee69735b57ed5df2605deae10`；后续有文档提交，标签和 main 不必相同。
 - 已有可运行的日频、1/5/30 分钟框架；StatsEvery、StatsInterval、Cohort 三种模式。
 - 历史验证：30 项构造数据测试通过；日频 Every、5 分钟 Every、5 分钟 Interval 完成真实全 A 数据验证。详情见第 10 节；不是所有模式、频率、全时间范围均完成真实数据验证。
-- 本次任务仅建立开发交接文档和维护入口，不修改回测逻辑、不重跑全量数据、不改变版本号。
-- 本文整理过程中，工作区同时出现另一轮“三因子对比”改动：`qsim/experiments.py`、`configs/simple_factors.toml`、`tests/test_experiments.py` 以及 CLI、run.sh、README、CHANGELOG 的修改。本文未执行或审计该轮运行，后续应检查其提交与验证记录；下文 0.2.0 的历史验证不覆盖这些新增实现。
+- 最新功能迭代：可选 alpha livetest（f/p/c）及真实 alpha checkpoint 已完成，版本仍为 0.2.0；全套 56 项测试通过。实际 CLI 三项均 PASS，未启用检查的季度回测与改动前结果一致。使用方法见 [LIVETEST.md](LIVETEST.md)，证据见第 12 节。
+- 最新独立验证：四组实际账户收益、费用、回撤、持仓及 IC 复算一致；89 天输入（含预热）与原始日线、停牌表及已生成复权因子一致。全套 39 项测试通过。参考多空收益仍分别有 30／36／33／32 天缺失，不能当成完整收益曲线。证据见第 10.2 节。
 - 本次文档任务没有启动后台回测。其他会话的任务与进程应另行核实，不要把建议清单当成已获授权的整批开发任务。
+- 本次 livetest 验收与恢复子进程均已退出，没有本轮遗留任务。
+- Git 留存：用户已授权将三因子、独立验证及 livetest 累计改动提交并同步到 GitHub 的 `feature/simple-factor-smoke` 分支；本轮同步记录见第 12 节末尾。
 
 ### 接手顺序
 
@@ -145,6 +147,12 @@ securities.parquet
 | `target_engine.py` | 新模式的 TargetLedger，按目标持仓执行约束 |
 | `metrics.py` | 日净值、年度／全期统计、相关性、HAC t 值 |
 | `report.py` | CSV／Parquet／PNG、审计文件和完成标记 |
+| `experiments.py`、`tests/test_experiments.py` | 2–5 因子分别及组合串行运行；信号、成交、IC、账户对账检查与因子公式测试 |
+| `alpha_events.py` | 普通回测与 livetest 共用的决策时点、信号计划、标的／ST 过滤 |
+| `input_policy.py` | 输入文件指纹与按可用时间截断／扰动，先于行情 pivot 和因子处理 |
+| `alpha_replay.py` | 生产因子重放、真实 checkpoint、独立进程恢复入口；不重算历史前缀 |
+| `alpha_compare.py`、`livetest.py`、`livetest_config.py` | 严格键对齐、三类检查编排、配置、报告与退出码 |
+| `scripts/verify_simple_factors.py`、`tests/test_verification.py` | 不导入 QSim 的日频独立输入核对、信号／IC／账户重放及手算测试 |
 | `tests/test_core.py`、`test_integration.py`、`test_stats.py` | 构造数据与端到端语义测试 |
 
 行情数组按 `[day, security, bar]` 组织，每次 DayCube 的 day 维长度为 1。固定证券轴通过证券表构造，各天有效池可变化；真实验证的全 A 轴含 5,939 标识，不意味着每一天都持有这些股票。
@@ -154,6 +162,8 @@ securities.parquet
 因子计算只使用已结束 bar 和 `available_at <= decision_time` 的表数据。先算信号、执行相应窗口，再将完成价格加入因子历史；日频 08:00 不允许使用当日全天收盘来构造信号。
 
 内置因子：momentum、reversal、volatility（负波动方向）。lookback 单位是观察到的采样 bar；warmup_days 单位是交易日。组合先取全部非零权重因子共同有效横截面，再分别做 MAD 截尾、可选风格／行业 OLS 残差化、标准化，最后按配置权重加总。不因某个因子缺失临时改变组合权重。
+
+`FactorModel` 和 `PITTable` 现有 `state_dict/load_state_dict`。alpha checkpoint 保存滚动历史、PIT 状态／游标、Python／NumPy 全局随机状态和事件游标；代码／配置／已读数据变动会拒绝恢复。保存边界为当前 bar 的 compute+observe 之后，恢复执行下一事件。仅用于 alpha 状态，不是完整资金账户 checkpoint；可信本机 pickle 不用于加载第三方不可信文件。
 
 外部因子、ST、标的池和暴露使用 CSV／Parquet，必须带 `order_book_id, available_at`；无时区时间按上海时间解释。相同证券、相同知识时点重复记录报错，最新已知值向后延续。外部池须与全 A 生命周期取交集。财务报告期不等于可用时间，不能直接把季度数据回填到季度起点。
 
@@ -268,6 +278,10 @@ idelayEach 默认为 0；预测期按所选采样网格 bar 计数，可跨午�
 
 Python 接口 `from qsim import run`，接受配置字典或 TOML 路径并返回 DataFrame 等结果。CLI `--validate` 只检查配置，`--no-dump` 不保存本次结果；工具自身缓存目录仍需按规则设置。
 
+`--livetest f/p/c`、`--livetest f,p` 或 `--livetest all` 显式开启 alpha 检查并替代本次账户运行；不占用短参数。配置 `[livetest]` 本身不启用检查。不带参数的配置结构不新增 livetest 节；未启用时数据干预接口为空，原账户流程保持兼容。CLI 可配置 times、warmup-days、atol、rtol、report；其他选项及覆盖边界见 [LIVETEST.md](LIVETEST.md)。
+
+`./run.sh configs/simple_factors.toml --compare-factors` 运行 20 日动量、5 日反转、20 日低波动三个单因子及等权组合。日频 Every、30 日预热、5 分组、5 日 IC、2023 年一季度，不开放 OS，允许 ST 未知值。对比结果在 `/mnt/nas/qinml_cache/qsim/result/`，根目录 `comparison.csv` 汇总各组结果，全部检查通过才写 COMPLETE。通用对比入口接受 2–5 个非零权重因子，组合沿用配置权重。
+
 主要导出：daily、summary、events、diagnostics、final_positions、可选 positions，Every 的 slot_daily／slot_summary，以及 stats_slots、stats_intervals、stats_sum 等模式相关表。配置 config.json、审计 audit.json 记录代码／配置／缓存目录 catalog 的哈希和异常计数。导出成功有 COMPLETE，失败可能有 INCOMPLETE；发现目录不能直接判定成功。
 
 图表有 dashboard.png、factor_analysis.png 和 Every 的 timing_comparison.png。指标按年度、IS、OS、ALL 及组别输出，包含：
@@ -325,7 +339,17 @@ Arrow 等库是否接受环境变量以及实际线程数要核实，大型任�
 
 基线 `eb183c1` 的 CI 成功记录：<https://github.com/YSZN-Ainvest/Qsim/actions/runs/40648458893>。后续代码变化必须跑相关新验证，不可将这一历史结果写成新提交的通过结果。
 
-### 10.2 未完成或未保证的内容
+### 10.2 三因子结果独立验证（2026-10-29）
+
+脚本 `scripts/verify_simple_factors.py` 不导入 QSim 因子、行情、交易或统计实现，按保存配置直接读取原始日线、停牌状态、复权因子和缓存；重建过去窗口信号、MAD／标准化／分组、5 日 IC、参考统计及独立现金账户。范围严格限定本次日频 Every、单时点、全 A、三类内置因子、无中性化和附加税／滑点／借券费的配置。
+
+- 30 天预热 + 59 天回测、5,939 证券轴，四组、每组 7 个账户加 LS 汇总。代码／配置／catalog 指纹、CSV／Parquet 数值一致性、日收益、费用、换手、回撤、期末持仓、54 天 IC 和末尾 5 天截尾均通过；41,611 次数值／一致性检查、86 类检查无失败。
+- 净值最大复算差异 1.68e-8 元，IC／Rank IC 最大差异 1.39e-16；四组汇总收益差异不超过 1.67e-15。原报告净收益和 IC 无需更正。
+- 原始日线和已生成后复权因子与缓存一致，不等于供应商原始数据和复权链已经独立认证。历史 ST、证券生命周期完整性、缺价估值、合成空头和 VWAP 执行近似仍有限制。
+- `stats_slots` 的 LS `reported_return` 缺失天数：动量 30、反转 36、低波动 33、组合 32（各 59 天）。这是目标仓位遇到缺价时按既定口径传播 NaN；实际账户依照不能成交／旧价估值规则仍有完整净值。禁止对参考收益简单填 0 或跳过缺失后宣称完整回测。
+- 报告：`/mnt/nas/qinml_cache/qsim/result/verification_20261029_independent_01/verification.json`；输入结果目录为 `simple_factors_comparison_20261029_095953_227402`，原结果未改写。复查脚本接收 `--comparison`、`--output`，输出须为 NAS 下的新目录；执行前仍须资源预检、缓存环境、硬限制和监控。
+
+### 10.3 未完成或未保证的内容
 
 1. 历史 ST 未补齐，示例放行未知值；不能宣称已经彻底剔除 ST。
 2. 中证 500／1000 历史成分未接入，用户明确暂缓。自定义池接口可用不等于这些池已有数据。
@@ -337,7 +361,8 @@ Arrow 等库是否接受环境变量以及实际线程数要核实，大型任�
 8. 新统计模式没有任意 holding_period；不要为绕过配置错误默默改模式。
 9. 按日读取不消除长时间事件表／外部 PIT 表的内存增长，未做全历史 1 分钟性能和资源安全认证。
 10. 未做因子收益优化或 OS 参数调优；示例收益不能当成策略有效性结论。
-11. 基线 `eb183c1` 的 `run.sh` 不自动完成 NAS 检测、缓存重定向或资源硬限制。整理本文时另一轮工作区修改已加入 NAS 检测、缓存重定向和线程限制；本文未验证该轮修改，且这些措施仍不等于资源硬配额或运行监控。
+11. `run.sh` 已验证 NAS 检测、缓存／临时目录重定向及数值库和 Arrow 单线程设置；尚不自动做资源预检、硬限制或压力监控。本轮真实回测单独使用 systemd 用户服务硬限制和外部监控，后续执行者仍须落实这些保护。
+12. Livetest 当前覆盖分组前组合分数，不覆盖账户状态／目标权重恢复。日历和证券轴固定；缺发布时间的缓存池／停牌／ST 暂按 08:00 可用，不能认证其真实历史可用时间。上游缓存／复权生成、表因子训练、绕过加载器的外部 I/O、自定义 RNG 对象需另行适配；PASS 不代表盈利能力。
 
 可考虑的后续方向（建议，不是当前待执行承诺）：数据 PIT 和 ST 完整性、固定小样本回归基准、资源预检和监控、增量数据更新、长区间分批导出、真实交易约束增强。具体顺序由用户本次目标确定。
 
@@ -397,3 +422,54 @@ Arrow 等库是否接受环境变量以及实际线程数要核实，大型任�
 - 提交／推送／CI：本节随本次文档提交保存，最终状态以 Git 远端和该提交 CI 为准；不要将基线 CI 成功混写为本次 CI 成功。
 - 未完成项：第 10 节所列功能和数据缺口保持原状态，等待用户指定下一迭代目标。
 - 并行工作区变化：发现另一轮“三因子对比”实现及其 README／CHANGELOG 改动，见第 1 节；其文档声称 36 项测试及四次真实运行通过，本次没有独立复验，不将其混入本次验证结论。
+
+### 2026-10-29 — 三个简单因子及组合跑通
+
+- 目标：用 2–5 个简单因子验证真实数据流程。复用现有 momentum/reversal/volatility，不改变因子、成交或统计口径。
+- 基线／分支：eb183c1 / `feature/simple-factor-smoke`。保留并行文档任务改动，按新增 AGENTS 要求同步本记录。
+- 改动：新增 `configs/simple_factors.toml`、`qsim/experiments.py`、6 项测试；CLI 增加 `--compare-factors`；`run.sh` 统一 NAS 缓存路径和线程设置；更新 README、CHANGELOG。
+- 兼容性：原 `run(config)` 不变；对比入口要求 2–5 个非零因子。缺信号、无成交、无有效 IC、无效净资产或损益对账失败会报错并保留结果。启动脚本在 NAS 不可用时失败，不回退本机磁盘。
+- 验证：原 30 项先通过，新增 6 项通过，最终 `unittest discover -s tests -q` 共 36 项通过；日志 `/mnt/nas/qinml_cache/qsim/logs/tests_20261029.log`。配置校验、编辑器诊断、Shell 语法及 Git 空白检查通过。未重跑其他频率、全历史或真实 OS 数据。
+- 真实试跑：先验证 2023-01-03 至 01-13 的 9 天，再跑至 03-31 的 59 天。证券轴 5,939，每天至少 5,006 个有效信号；四组均 59 天成交、54 天有效 IC，末尾 5 天 right_censored，无无信号 bar。最大对账误差约 6.4e-9 元。
+- 季度 LS 净收益／Rank IC：动量 −4.3802%／−0.04479；反转 +0.1792%／+0.01120；低波动 +1.7851%／+0.09708；组合 −0.1700%／+0.05105。仅为小样本流程验证。
+- 结果：`/mnt/nas/qinml_cache/qsim/result/simple_factors_comparison_20261029_095953_227402/`，含 comparison.csv、四组报告／图表和完成标记。组合仍有 stale_mark_cells=97、limit_blocked_cells=499、unfilled_exit_cells=2864；沿用原估值／成交约束，未修复源数据缺口。
+- 资源：预检可用内存约 39 GiB，CPU 有空闲，父 cgroup 无额外限额；串行运行。systemd 硬限制 1 核、2 GiB，MemoryHigh=1.5 GiB、禁止 swap。每 5 秒监控，系统可用内存低于 8 GiB 或任务超过 1.5 GiB 时停止自己的服务。季度运行约 71 秒，cgroup 峰值 341.2 MiB；退出码 0，最终 MainPID=0、服务 inactive，未触发保护。日志 `/mnt/nas/qinml_cache/qsim/logs/20261029_simple_factors/`。
+- 异常：首次小样本命令因未安装 `/usr/bin/time` 未启动回测；改用 Python resource 与 systemd 统计后成功，无遗留 worker。
+- 剩余项：ST、证券清单和合成空头等限制仍在；未做收益优化，下一步由用户指定。
+- 提交／推送／CI：本功能迭代尚未提交或推送，未运行远端 CI；以上均为本机验证。
+
+### 2026-10-29 — 独立核验三因子回测结果
+
+- 需求：接续开发交接文档，验证上一轮结果是否正确。先读项目 AGENTS、当前交接文档、用户提供的只读快照和 STATS；只维护仓库文档及其既有软链接，未编辑附件。
+- 基线／分支：745d4f8 / `feature/simple-factor-smoke`，保留上一轮全部未提交改动。
+- 改动：新增独立核验脚本及 3 项测试，补充本文、README、CHANGELOG。无生产引擎、因子、统计公式或原结果改动。
+- 方法与结果：见第 10.2 节。验证器的多／空首日现金和费用、次日退出与容量限制均有手算用例；另验证数值篡改和 NaN 不一致会被捕获。此 3 项测试已实际通过。
+- 最终回归：`unittest discover -s tests -q` 共 39 项通过（16.3 秒），日志 `logs/20261029_verification/tests.log` 位于 NAS 项目目录；新增代码无编辑器诊断，Git 空白检查通过。
+- 资源：启动前可用内存约 39 GiB、CPU 空闲约 55%、所查父 cgroup 无额外限制；按 89 天约 50 MiB 数值矩阵加分块解析开销估算低于 700 MiB。使用 1 核、2 GiB 硬限制及 1.5 GiB MemoryHigh，单线程、每 5 秒监控及余量阈值停止保护。运行约 33.5 秒，cgroup 内存峰值 336.2 MiB、无 swap；退出码 0，最终 MainPID=0、inactive，无遗留 worker。
+- 证据：报告路径见第 10.2 节；运行日志和资源日志在 `/mnt/nas/qinml_cache/qsim/logs/20261029_verification/`。
+- 结论与未完成项：当前模型口径下实际账户收益及 IC 复算正确；目标参考收益有大量按规则保留的缺失。未认证真实可交易性、供应商数据、完整 PIT 状态或其他模式／频率，不据此做收益优化。
+- 提交／推送／CI：本次尚未提交、未推送、未触发远端 CI。
+
+### 2026-10-29 — 可选 alpha livetest 与 checkpoint
+
+- 需求：增加 f 未来数据、p 历史起点、c checkpoint 恢复检查；严格对齐同一时点／标的／alpha，不能将无有效比较点判为通过。
+- 基线／分支：745d4f8 / `feature/simple-factor-smoke`，保留前两轮未提交修改。读当前项目交接及用户提供的只读快照，未编辑附件。
+- 实现：共享决策网格和过滤函数；MarketData／PITTable 新增可选输入干预，在本地特征处理之前截断或扰动可用时间晚于目标的输入。生产因子仍调用原 compute/observe。新增 checkpoint 显式保存状态、输入版本及数据游标；c 默认新进程恢复，逐时点比较后缀，并检查事件不重放、不遗漏。
+- 参数与报告：`--livetest` 支持 f/p/c/all 和逗号组合，未启用则不运行检查。默认 3 个确定性时点，p 默认 3 个不同交易日起点；完整预热不足为 INSUFFICIENT_DATA。float64 默认 atol=1e-10、rtol=1e-8；键并集对齐，缺失／重复／无穷值失败，双 NaN 不算有效证据。所有显式检查全部 PASS 才返回 0，其他状态返回 1 并保存 JSON；参数错误为 2。
+- 测试：首轮专项 15 项通过；补充分钟输入边界、确定性扰动和缺失输出后，完整 unittest 共 56 项通过（115.9 秒）。覆盖故意读未来、启动日期依赖、漏存历史、随机状态恢复、PIT 状态、跨日／跨周与分钟三模式、真实恢复子进程、版本变化拒绝、全 NaN／缺失／重复／数据不足、CLI 退出码和默认兼容性。日志 `/mnt/nas/qinml_cache/qsim/logs/20261029_livetest/all_01.log`。
+- 实际 CLI：`configs/livetest_demo.toml`（6 标的、2023-01-03 至 01-20、14 天、10 天预热）执行 all。选择 01-03、01-11、01-19 的 08:00；p 起点为 01-03、01-06、01-12。f 6 次比较／252 有效点、p 2 次／84 点、c 3 次／126 点，全 PASS、最大绝对误差 0、无缺失键。c 实际保存时间均为当日 15:00，3 个独立 worker，从下一事件继续。
+- 报告样例：`/mnt/nas/qinml_cache/qsim/result/livetest_acceptance_20261029/report.json`；同目录 report_state 保存可信 checkpoint、恢复输出和 worker 日志。报告含 99 个输入文件指纹；livetest 自身耗时 32.4 秒。
+- 默认兼容性：不带 livetest 重跑此前组合的 59 天季度回测，daily、events、diagnostics、final_positions、slot_daily、stats_slots、stats_tvr、summary 均与改动前保存结果一致（rtol=1e-12、atol=1e-8）。代码指纹因增加功能而变化，未伪造旧指纹。记录在同日志目录的 compatibility.json。
+- 资源：预检可用内存约 35.9 GiB，16 核机器采样空闲 48%，所查父 cgroup 无额外限额；已有其他负载，采用 1 核／2 GiB 硬限制、MemoryHigh=1.5 GiB、禁用 swap，每 5 秒监控并在资源阈值触发时停止自己的服务。CLI 验收加兼容性重跑约 59.8 秒，cgroup 峰值 407.6 MiB；正常退出、最终 MainPID=0/inactive，未触发资源保护。
+- 兼容性与未覆盖：未更改收益／交易公式，无需改 STATS。当前只验证 combined_score，账户依赖 alpha 返回 UNSUPPORTED；上游数据构建、训练和未知发布时间等限制见第 10.3 节。默认最多 100 万条 alpha 记录，超限返回 UNSUPPORTED；这是规模保护，不替代资源预检。
+- 文档：新增 LIVETEST 使用说明与小规模配置，更新 README／CHANGELOG／本文。编辑器诊断和 Git 空白检查通过。
+- 提交／推送／CI：本次未提交、未推送，未触发远端 CI。
+
+### 2026-10-29 — 提交并同步 GitHub
+
+- 需求：用户明确要求 Git 提交并同步 GitHub。
+- 范围：此前三因子对比、独立验证、livetest／checkpoint 及对应配置、测试和文档；数据、结果、日志及 checkpoint 保留 NAS，不纳入 Git。
+- 提交主题：`feat: add factor experiments and alpha livetest checks`；分支 `feature/simple-factor-smoke`，远端 `YSZN-Ainvest/Qsim`。
+- 验证：沿用本轮已执行的 56 项通过记录，以及实际 livetest 与季度回测兼容性验证；提交前检查 diff 和文件清单，无生产代码再改动，不重复大型运行。
+- 提交／推送：本条作为功能提交的交付记录，完成状态以该提交和远端分支为准，不预填自身提交哈希。
+- CI：当前 workflow 只在 main push、PR 或手动 dispatch 时运行，功能分支 push 本身不触发；不得将本地通过记录写成远端 CI 通过。

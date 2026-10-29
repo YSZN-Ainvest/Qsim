@@ -10,6 +10,9 @@
 
 [统计口径](STATS.md) · [开发说明](CONTRIBUTING.md) · [版本记录](CHANGELOG.md)
 
+可选 alpha 因果性与状态检查：`./run.sh configs/livetest_demo.toml --livetest all`。
+支持 `f`（未来数据）、`p`（历史起点）、`c`（checkpoint）及组合；不传参数保持普通回测。见 [livetest 使用说明](document/LIVETEST.md)。
+
 AI 接手与迭代记录：[开发交接文档](document/QSIM_DEVELOPMENT.md)。
 
 ## 安装和运行
@@ -26,6 +29,32 @@ python -m qsim --config configs/interval_demo.toml
 ```
 
 `--validate` 只检查配置，`--no-dump` 运行但不保存结果。也可使用 `./run.sh configs/daily_demo.toml`；解释器可通过 `QSIM_PYTHON` 指定。
+
+## 三个简单因子试跑
+
+```bash
+./run.sh configs/simple_factors.toml --compare-factors
+```
+
+2023 年一季度、全 A、日频、5 分组，串行运行三个单因子和等权组合：
+
+| 因子 | 日频公式（C 为已完成交易日的复权收盘价） |
+|---|---|
+| 20 日动量 | `C[t-1] / C[t-21] - 1` |
+| 5 日反转 | `-(C[t-1] / C[t-6] - 1)` |
+| 20 日低波动 | 最近 20 个日收益的标准差取负，`ddof=0` |
+
+各因子先 MAD 截尾、横截面标准化，再等权相加；组合只使用三者都有值的证券。
+30 个交易日预热，08:00 取信号，当日 VWAP 成交，5 日 IC；费用每次成交 5 bps，成交量上限 1%，执行 T+1。
+历史 ST 未知值允许通过，空头为合成仓位，本例只验证流程能否跑通。
+
+结果保存在 `/mnt/nas/qinml_cache/qsim/result/` 的独立目录。`comparison.csv` 汇总多空收益、回撤、IC、信号数和成交天数，各子目录保留完整报告和图表。
+出现无信号、无成交、无有效 IC 或损益对账失败时，命令报错并保留 `INCOMPLETE`；全部通过才写 `COMPLETE`。
+`--compare-factors` 也可用于含 2–5 个非零权重因子的其他配置；组合沿用配置权重。
+
+启动脚本将缓存和临时文件放入 NAS，数值库及 Arrow 线程设为 1。较大运行仍须先检查资源配额、设置硬限制并监控。
+
+[独立验证脚本](scripts/verify_simple_factors.py) 可核对本例输入、信号、IC、参考统计和实际账户，不调用 QSim 引擎。2026-10-29 四组账户结果复算一致；目标参考多空收益仍有 30–36 天缺失，不能当成完整收益曲线。范围与证据见[开发记录](document/QSIM_DEVELOPMENT.md#102-三因子结果独立验证2026-10-29)。
 
 ## 配置
 

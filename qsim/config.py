@@ -58,10 +58,15 @@ def load_config(value):
         with open(value, 'rb') as stream:
             value = tomllib.load(stream)
     cfg = deepcopy(DEFAULTS)
+    if 'livetest' in value:
+        from .livetest_config import options
+        cfg['livetest'] = options(value['livetest'])
     unknown = set(value) - set(cfg)
     if unknown:
         raise ValueError(f'Unknown config sections: {unknown}')
     for key, val in value.items():
+        if key == 'livetest':
+            continue
         if isinstance(cfg[key], dict):
             extra = set(val) - set(cfg[key])
             if extra:

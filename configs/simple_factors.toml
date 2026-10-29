@@ -1,0 +1,39 @@
+# Plumbing experiment: historical ST unknowns allowed, no OS access.
+[data]
+warmup_days = 30
+
+[backtest]
+start = "2023-01-03"
+end = "2023-03-31"
+frequency = "0800"
+mode = "StatsEvery"
+allow_os = false
+forecast_period = 5
+groups = 5
+capital = 10000000.0
+
+[operations]
+st_unknown = "allow"
+
+[[factors]]
+name = "momentum20"
+kind = "momentum"
+lookback = 20
+weight = 1.0
+
+[[factors]]
+name = "reversal5"
+kind = "reversal"
+lookback = 5
+weight = 1.0
+
+[[factors]]
+name = "low_volatility20"
+kind = "volatility"
+lookback = 20
+weight = 1.0
+
+[output]
+directory = "/mnt/nas/qinml_cache/qsim/result"
+name = "simple_factors"
+plots = true

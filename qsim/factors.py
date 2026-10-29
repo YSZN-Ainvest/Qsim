@@ -1,4 +1,5 @@
 from collections import deque
+from copy import deepcopy
 import numpy as np
 
 from .pit import PITTable
@@ -7,7 +8,10 @@ from .operations import process
 
 class FactorModel:
     """compute() sees only past completed bars and tables available at decision time."""
-    def __init__(self, config, symbols):
+    history_kind = 'finite'
+    depends_on_account = False
+
+    def __init__(self, config, symbols, input_policy=None):
         self.config, self.symbols = config, symbols
         self.specs = config['factors']
         self.lookback = max([f.get('lookback',1) for f in self.specs])
@@ -16,12 +20,36 @@ class FactorModel:
         for f in self.specs:
             if f['kind'] == 'table':
                 col = f.get('column',f['name'])
-                self.tables[f['name']] = PITTable(f['path'],[col],symbols,config['backtest']['end'])
+                self.tables[f['name']] = PITTable(f['path'],[col],symbols,config['backtest']['end'],input_policy)
         o = config['operations']
         cols = list(dict.fromkeys(o['neutralize_styles']+o['neutralize_industries']))
-        self.exposures = PITTable(o['exposures_path'],cols,symbols,config['backtest']['end']) if cols and o['exposures_path'] else None
+        self.exposures = PITTable(o['exposures_path'],cols,symbols,config['backtest']['end'],input_policy) if cols and o['exposures_path'] else None
         if cols and self.exposures is None:
             raise ValueError('Set operations.exposures_path to a historical exposure table')
+
+    @property
+    def minimum_history(self):
+        return max([f['lookback']+1 for f in self.specs if f['kind'] != 'table' and f.get('weight',1) != 0] or [0])
+
+    def state_dict(self):
+        return deepcopy({'history': list(self.history), 'symbols': self.symbols,
+                         'tables': {k: v.state_dict() for k,v in self.tables.items()},
+                         'exposures': self.exposures.state_dict() if self.exposures is not None else None})
+
+    def load_state_dict(self, state):
+        if state['symbols'] != self.symbols or set(state['tables']) != set(self.tables):
+            raise ValueError('Factor checkpoint schema mismatch')
+        if len(state['history']) > self.history.maxlen:
+            raise ValueError('Factor checkpoint history exceeds lookback')
+        self.history.clear()
+        for row in state['history']:
+            if np.asarray(row).shape != (len(self.symbols),):
+                raise ValueError('Factor checkpoint security shape mismatch')
+            self.history.append(np.array(row,copy=True))
+        for name, table in self.tables.items():
+            table.load_state_dict(state['tables'][name])
+        if self.exposures is not None:
+            self.exposures.load_state_dict(state['exposures'])
 
     def observe(self, completed_close):
         self.history.append(np.array(completed_close,copy=True))

@@ -1,0 +1,39 @@
+# Small daily check using existing NAS data. No account backtest when --livetest is set.
+[data]
+warmup_days = 10
+
+[backtest]
+start = "2023-01-03"
+end = "2023-01-20"
+frequency = "0800"
+groups = 2
+allow_os = false
+
+[universe]
+kind = "symbols"
+symbols = ["000001.XSHE", "000002.XSHE", "000004.XSHE", "000005.XSHE", "000006.XSHE", "000007.XSHE"]
+
+[operations]
+st_unknown = "allow"
+min_cross_section = 3
+
+[[factors]]
+name = "momentum5"
+kind = "momentum"
+lookback = 5
+weight = 1.0
+
+[output]
+directory = "/mnt/nas/qinml_cache/qsim/result"
+name = "livetest_demo"
+plots = false
+
+[livetest]
+samples = 3
+seed = 17
+atol = 1e-10
+rtol = 1e-8
+report_directory = "/mnt/nas/qinml_cache/qsim/result/livetest"
+# times = ["2023-01-06 08:00", "2023-01-13 08:00"]
+# starts = ["2023-01-03", "2023-01-05", "2023-01-09"]
+# warmup_days = 10

@@ -1,11 +1,12 @@
 """User tables carry actual knowledge timestamps, not reporting periods."""
 from pathlib import Path
+from copy import deepcopy
 import numpy as np
 import pandas as pd
 
 
 class PITTable:
-    def __init__(self, path, columns, symbols, max_date):
+    def __init__(self, path, columns, symbols, max_date, input_policy=None):
         p = Path(path)
         frame = pd.read_parquet(p) if p.suffix == '.parquet' else pd.read_csv(p)
         required = {'order_book_id', 'available_at', *columns}
@@ -22,6 +23,9 @@ class PITTable:
         # No OS rows are exposed to the factor computation during an IS-only run.
         end = pd.Timestamp(max_date, tz='Asia/Shanghai') + pd.Timedelta(days=1)
         frame = frame.loc[frame.available_at.lt(end) & frame.order_book_id.isin(symbols)]
+        if input_policy is not None:
+            input_policy.record(p)
+            frame = input_policy.apply(frame, frame.available_at, str(p.resolve()), columns)
         if frame.duplicated(['available_at','order_book_id']).any():
             raise ValueError(f'{path}: duplicate knowledge-time/security keys')
         if frame.available_at.isna().any():
@@ -33,6 +37,18 @@ class PITTable:
         self.state = pd.DataFrame(index=symbols, columns=columns, dtype=object)
         self.cursor = 0
         self.last = None
+
+    def state_dict(self):
+        return deepcopy({'cursor': self.cursor, 'last': self.last, 'state': self.state,
+                         'columns': self.columns, 'symbols': self.symbols})
+
+    def load_state_dict(self, state):
+        if state['columns'] != self.columns or state['symbols'] != self.symbols:
+            raise ValueError('PIT checkpoint schema mismatch')
+        if not 0 <= state['cursor'] <= len(self.frame):
+            raise ValueError('PIT checkpoint cursor outside input')
+        self.cursor, self.last = state['cursor'], state['last']
+        self.state = state['state'].copy(deep=True)
 
     def at(self, when):
         if self.last is not None and when < self.last:

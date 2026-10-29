@@ -14,8 +14,9 @@ from .engine import Ledger
 from .factors import FactorModel
 from .metrics import correlation,daily_curve,report_metrics
 from .operations import groups_from_score
-from .pit import PITTable,boolean_values
+from .pit import PITTable
 from .report import dump_results
+from .alpha_events import decision_time, eligible_at
 
 
 def run(config):
@@ -49,21 +50,10 @@ def run(config):
     for day_index,date in enumerate(market.run_dates):
         day=market.load_day(date)
         for j,row in day.calendar.iterrows():
-            when=pd.Timestamp(date+' 08:00',tz='Asia/Shanghai') if market.freq=='1d' else row.bar_start
+            when=decision_time(date,row,market.freq)
             data=day.bar(j)
-            eligible=day.member.copy()
-            if universe:
-                eligible &= boolean_values(universe.at(when).in_universe)==1
-            if config['execution']['suspension_filter']:
-                eligible &= day.suspended==0
-            if o['exclude_st']:
-                values=boolean_values(st.at(when).is_st) if st else day.st
-                unknown=eligible&~np.isfinite(values)
-                unknown_st+=int(unknown.sum())
-                if unknown.any() and o['st_unknown']=='error':
-                    raise ValueError(f'{date}: historical ST status missing for {unknown.sum()} securities. '
-                                     'Supply operations.st_path; or explicitly set st_unknown=allow/exclude.')
-                eligible &= (values==0)|(np.isnan(values)&(o['st_unknown']=='allow'))
+            eligible,unknown=eligible_at(day,when,config,st,universe)
+            unknown_st+=unknown
             score=model.compute(when,eligible)
             groups=groups_from_score(score,b['groups'])
             if not np.any(groups>=0):
