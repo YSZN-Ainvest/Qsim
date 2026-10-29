@@ -14,9 +14,9 @@
 - 最新功能迭代：v0.3 已实现默认流式落盘、共享输入、命名因子／表达式、因子线程池、多配置进程池、完整日志、独立 PNG、JSON 汇总及因子值 dump；已移除强制 OS 门禁和研究分界。71 项回归测试通过，绘图刻度修复后专项复测通过。使用方法见 [STREAMING.md](STREAMING.md)。
 - 使用入口已重写为 README 全流程教程：默认现有 NAS 行情，完整配置为 configs/tutorial.toml；新增 USAGE、CONFIGURATION、DATA、OUTPUTS 四份分层说明及真实输出图片。数据与 QD 协调计划列在 README，不把历史停牌接口或推算复权误写为完全不存在。
 - README 的 QSim 流程与 Operations 顺序图已改为用户指定的竖向灰色卡片样式，引用 document/assets 下的 SVG，并保留对应 HTML 源文件。
+- 终端汇总已修复固定10列导致的展示遗漏：按收益、回撤／持仓、交易／成本、因子评价输出完整LS年度与ALL记录，dd_start、dd_end、winrate等沿用原统计值，新增字段自动显示在Additional metrics。
 - 最新独立验证：四组实际账户收益、费用、回撤、持仓及 IC 复算一致；89 天输入（含预热）与原始日线、停牌表及已生成复权因子一致。全套 39 项测试通过。参考多空收益仍分别有 30／36／33／32 天缺失，不能当成完整收益曲线。证据见第 10.2 节。
-- 本轮验收、进程池和 checkpoint 子进程均已退出，没有本轮遗留计算任务；其他会话任务另行核实。
-- 本次 livetest 验收与恢复子进程均已退出，没有本轮遗留任务。
+- 此前v0.3／短样本验收与checkpoint子进程已退出。当前五年日频／30分钟文档示例正在运行，资源限额、unit与日志见本节末尾开发记录；不得误当作无后台任务。
 - 上一阶段分钟 PIT 复核：5 项边界测试和六组真实小样本 f 检查通过；v0.3 在此基础上完成内存／日志／绘图及并行改造，见第 12 节最新记录。
 - 当前维护分支为 `main`，已快进合入 `feature/streaming-pools` 的 aa2da7a，包含此前全部功能和 CI 修复。后续默认在 main 维护和交付，临时分支验证完成后及时合回；旧功能分支保留历史引用。版本验收报告和示例结果均在 NAS，不提交 Git。
 - CI 修复：e6b6276 的工作流因 job.env 不支持 runner.temp 在测试启动前被拒绝；bcdf0a4 将缓存变量移至测试 step.env，远端 run 40837614274 全部 71 项通过（34.945 秒，无跳过）。本机测试通过不等于工作流有效。
@@ -557,3 +557,12 @@ Arrow 等库是否接受环境变量以及实际线程数要核实，大型任�
 - 按用户提供的 QSim Workflow、Operations Execution Order HTML 文案和样式，替换 README 两处 Mermaid。HTML 保存至 document/assets/qsim_workflow.html、operations_order.html；按浏览器实际布局导出同名 SVG，README 直接引用，避免依赖内嵌 HTML/CSS 渲染。
 - 保留竖向灰底圆角卡片、箭头、PIT 侧向输入和账户／评价双分支。SVG 仅包含矩形与文字，无脚本、外部资源或 foreignObject；HTML 的每段可见文字与 SVG 去空白比对一致，浏览器预览与 XML 解析检查通过。
 - 本次仅改文档和图形素材，未修改回测逻辑，不启动本机测试或回测；没有本轮计算 worker。原始结果未改动，按既有授权同步 main，远端 CI 状态以对应提交为准。
+
+### 2026-10-29 — 终端指标补全与五年示例（进行中）
+
+- 用户要求：README 详细说明按bar网格决定的Every账户与Interval连续账户；展示至少4–5年、日频及分钟、5／10组的分层结果；livetest独立并列解释f/p/c。随后要求先核对终端遗漏的dd_start、dd_end、winrate。
+- 已确认：summary.json／在线统计已有这些字段，CLI固定选择10列导致隐藏。新增qsim/terminal.py分块显示原始LS完整汇总，CLI调用它，不重算或改变指标；未知新增列也不丢弃。新增2项终端测试和既有CLI／livetest兼容测试实际通过。
+- 五年配置：2021-01-01至2025-12-31，历史全A池、10组；日频与30分钟均Every，分钟全日8bar对应8套时点策略。扫描日历与分区确认1212个交易日、30日预热，无所需分区缺失（不等同于逐值完整性）。关闭长期因子和每日持仓dump，保留账户／参考统计／诊断和图表。短段10日试跑正常，进程峰值约299／361MiB。
+- 当前任务：qsim-readme-daily-5y.service、qsim-readme-minute-5y.service。运行目录分别为 `/mnt/nas/qinml_cache/qsim/result/readme_daily_5y_20261029_171342_503890_f9ae4c10/`、`readme_30m_5y_20261029_171352_496764_b43399ef/`（同结果根目录）；本条写入时仍在运行，未宣称完成或通过。
+- 日志与监控：`/mnt/nas/qinml_cache/qsim/logs/readme_5y_20261029/`，daily.log、minute.log、resources_relaxed.log。先按1核／2GiB试跑；用户随后明确允许合计500%CPU和启动前空闲内存60%。重新核查约36GiB可用后，两个unit各250%CPU、MemoryHigh=4GiB、MemoryMax=10GiB、禁swap，合计20GiB低于60%上限；每5秒监控，系统余量不足8GiB或整组超过当前空闲60%时只停本轮任务。旧监控仅终止自身PID833436并替换，新监控继续运行，回测没有重启。
+- 终端修复先独立留存；README、五年配置及图表待长任务完成后核验更新，不能把尚在生成的分区当作完整示例。未提交工作区中的README等是本次后续文档草稿，应保留。

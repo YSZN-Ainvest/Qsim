@@ -2,6 +2,7 @@ import argparse
 import json
 from .config import load_config
 from .runner import run
+from .terminal import print_summary
 
 
 def main():
@@ -64,8 +65,7 @@ def main():
         return
     result=run(config)
     print('Mode:',config['backtest']['mode'],'; summary basis:',result['audit'].get('summary_basis','single_cohort_portfolio'))
-    cols=['period','from','to','return','tvr','sharp','dd','IC','rank_IC','nHold']
-    print(result['summary'].loc[result['summary'].book.eq('LS'),cols].to_string(index=False))
+    print_summary(result['summary'])
     print('Output:',result['output_directory'] or 'dump disabled')
 
 
