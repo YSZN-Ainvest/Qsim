@@ -17,7 +17,7 @@
 - 本次 livetest 验收与恢复子进程均已退出，没有本轮遗留任务。
 - 上一阶段分钟 PIT 复核：5 项边界测试和六组真实小样本 f 检查通过；v0.3 在此基础上完成内存／日志／绘图及并行改造，见第 12 节最新记录。
 - 当前分支 `feature/streaming-pools`，基线 24eb75e；此前功能分支 `feature/simple-factor-smoke` 保留。版本验收报告和示例结果均在 NAS，不提交 Git。
-- CI 修复：e6b6276 的工作流因 job.env 不支持 runner.temp 在测试启动前被拒绝；已将缓存变量移至测试 step.env，远端重验结果见最新开发记录。本机测试通过不等于工作流有效。
+- CI 修复：e6b6276 的工作流因 job.env 不支持 runner.temp 在测试启动前被拒绝；bcdf0a4 将缓存变量移至测试 step.env，远端 run 40837614274 全部 71 项通过（34.945 秒，无跳过）。本机测试通过不等于工作流有效。
 - Git 留存：用户已授权将三因子、独立验证及 livetest 累计改动提交并同步到 GitHub 的 `feature/simple-factor-smoke` 分支；本轮同步记录见第 12 节末尾。
 
 ### 接手顺序
@@ -531,3 +531,4 @@ Arrow 等库是否接受环境变量以及实际线程数要核实，大型任�
 - 原因与改动：GitHub 的 jobs.<job_id>.env 不支持 runner 上下文；将 QSIM_CACHE_ROOT 的 runner.temp 表达式移至测试步骤 env。依据官方 contexts 的 Context availability 表；保留 NAS 无关的 CI 临时缓存和原触发条件，不改回测算法。
 - 验证：检查差异与官方上下文范围，Git 空白检查通过。推送后使用 workflow_dispatch 主动验证当前分支；该远端结果另行追加，不预填成功。此前“功能分支 push 不触发”的说明不适用于无效工作流解析错误。
 - 范围：只修改 CI 与交接文档；只读附件未修改，未启动本机大型计算。提交主题 `fix: scope runner cache path to test step`。
+- 远端复验：修复提交 bcdf0a450b867c7f3ad1736047b007b840a5512f 已推送；[workflow_dispatch run 40837614274](https://github.com/YSZN-Ainvest/Qsim/actions/runs/40837614274) 成功，安装与测试步骤均成功，71 项测试用时 34.945 秒、无跳过。后续仅更新本条验证记录，不修改已验证的工作流或生产代码。
