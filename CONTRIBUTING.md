@@ -2,6 +2,8 @@
 
 仓库：[YSZN-Ainvest/Qsim](https://github.com/YSZN-Ainvest/Qsim)。
 
+开始开发先读 [开发交接文档](document/QSIM_DEVELOPMENT.md)。每次迭代同步更新当前状态并追加改动、验证和未完成项；具体维护要求见 [AGENTS.md](AGENTS.md)。
+
 ## 本地开发
 
 ```bash

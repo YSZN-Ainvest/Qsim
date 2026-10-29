@@ -10,6 +10,8 @@
 
 [统计口径](STATS.md) · [开发说明](CONTRIBUTING.md) · [版本记录](CHANGELOG.md)
 
+AI 接手与迭代记录：[开发交接文档](document/QSIM_DEVELOPMENT.md)。
+
 ## 安装和运行
 
 需要 Python 3.11+。
