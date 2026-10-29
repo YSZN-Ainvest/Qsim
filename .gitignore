@@ -35,6 +35,8 @@ qinml_cache/
 *.pkl
 *.pickle
 *.png
+# Reviewed documentation illustrations; raw runs remain outside the repository.
+!document/assets/tutorial_*.png
 *.pdf
 verification*.json
 frequency_smoke.json
