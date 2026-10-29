@@ -10,19 +10,7 @@ QSim 是面向横截面 alpha 的回测基础设施。你提供行情、因子�
 
 QSim 执行研究者给定的因子逻辑，不负责自动寻找因子或划分训练样本。回测与一致性检查通过，不代表因子有预测能力或策略可以盈利。
 
-```mermaid
-flowchart LR
-    C["TOML 配置<br/>时间 · 因子 · 账户 · 输出"] --> L
-    D["行情与交易日历"] --> L["按日加载<br/>固定证券轴"]
-    P["外部 PIT 表<br/>available_at ≤ 决策时刻"] --> A
-    L --> A["因子计算<br/>仅用已完成行情"]
-    A --> O["Operations<br/>截尾 → 中性化 → 标准化"]
-    O --> S["表达式／权重组合<br/>分组与目标仓位"]
-    S --> T["账户推进<br/>成交约束 · 费用 · 持仓"]
-    S --> I["到期标签<br/>IC 与参考统计"]
-    T --> R["逐日／按批保存<br/>Parquet · JSON · 日志 · PNG"]
-    I --> R
-```
+![QSim — Factor Research & Backtesting Workflow](document/assets/qsim_workflow.svg)
 
 **阅读路线**：[安装与首次运行](#安装与首次运行) → [完整配置](#完整配置示例) → [因子与处理流程](#因子如何进入回测) → [选择回测模式](#选择回测模式) → [查看结果](#查看结果)。
 
@@ -243,14 +231,7 @@ stage = "processed"
 
 ### Operations 的执行顺序
 
-```mermaid
-flowchart LR
-    U["生命周期 ∩ 标的池<br/>ST／停牌过滤"] --> R["各因子原始值"]
-    R --> V["参与合成的因子<br/>共同有效截面"]
-    V --> W["MAD 截尾"] --> N["可选 OLS 中性化"]
-    N --> Z["可选截面标准化"] --> C["按公式／权重组合"]
-    C --> G["分组 → 目标持仓"]
-```
+![Operations — Execution Order](document/assets/operations_order.svg)
 
 默认先各自处理，再组合。截尾限制极端值；中性化去除配置的风格和行业线性暴露；标准化让不同尺度的因子可以组合。中性化需要对应历史时点的暴露表，不能用今天的行业回填历史。
 

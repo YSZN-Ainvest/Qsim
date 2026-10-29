@@ -13,6 +13,7 @@
 - 历史验证：30 项构造数据测试通过；日频 Every、5 分钟 Every、5 分钟 Interval 完成真实全 A 数据验证。详情见第 10 节；不是所有模式、频率、全时间范围均完成真实数据验证。
 - 最新功能迭代：v0.3 已实现默认流式落盘、共享输入、命名因子／表达式、因子线程池、多配置进程池、完整日志、独立 PNG、JSON 汇总及因子值 dump；已移除强制 OS 门禁和研究分界。71 项回归测试通过，绘图刻度修复后专项复测通过。使用方法见 [STREAMING.md](STREAMING.md)。
 - 使用入口已重写为 README 全流程教程：默认现有 NAS 行情，完整配置为 configs/tutorial.toml；新增 USAGE、CONFIGURATION、DATA、OUTPUTS 四份分层说明及真实输出图片。数据与 QD 协调计划列在 README，不把历史停牌接口或推算复权误写为完全不存在。
+- README 的 QSim 流程与 Operations 顺序图已改为用户指定的竖向灰色卡片样式，引用 document/assets 下的 SVG，并保留对应 HTML 源文件。
 - 最新独立验证：四组实际账户收益、费用、回撤、持仓及 IC 复算一致；89 天输入（含预热）与原始日线、停牌表及已生成复权因子一致。全套 39 项测试通过。参考多空收益仍分别有 30／36／33／32 天缺失，不能当成完整收益曲线。证据见第 10.2 节。
 - 本轮验收、进程池和 checkpoint 子进程均已退出，没有本轮遗留计算任务；其他会话任务另行核实。
 - 本次 livetest 验收与恢复子进程均已退出，没有本轮遗留任务。
@@ -550,3 +551,9 @@ Arrow 等库是否接受环境变量以及实际线程数要核实，大型任�
 - 命令复验：同一 tutorial.toml 的 --validate 成功，--livetest all 的 f/p/c 分别6／2／3次比较全部PASS，报告 `/mnt/nas/qinml_cache/qsim/result/livetest/livetest_20261029_163714_105088/report.json`。配置校验与重放整组用时63.589秒、CPU17.277秒、systemd峰值217.0 MiB、swap为0；正常退出。此次未修改生产逻辑，不重复本机71项全套测试；main推送自动CI另行核实。
 - 资源：启动前可用内存约 39–40 GiB、CPU 采样空闲约89%，已查用户及父 cgroup 无更低限额。小样本估算小于512 MiB，整组设1核／1 GiB硬限制、MemoryHigh=768 MiB、禁swap。示例耗时26.035秒、CPU4.450秒；systemd报告峰值117.5 MiB，进程ru_maxrss约264.2 MiB（统计口径不同，不混用）。结束MainPID=0、inactive，无遗留worker。截图服务启动失败（端口占用）未留下本次服务，改用浏览器内存页面捕获，不动他人服务。
 - 范围与留存：附件只读未修改，原始数据／结果未迁移或删除；初拟的合成数据教程已按用户“默认NAS”要求撤回，仅删除本轮新建且未提交的教程生成器。用户未要求重写的旧业务文档保持原结构。本轮按已有授权提交至 main，不预填远端 CI 成功。
+
+### 2026-10-29 — 替换 README 两张流程图
+
+- 按用户提供的 QSim Workflow、Operations Execution Order HTML 文案和样式，替换 README 两处 Mermaid。HTML 保存至 document/assets/qsim_workflow.html、operations_order.html；按浏览器实际布局导出同名 SVG，README 直接引用，避免依赖内嵌 HTML/CSS 渲染。
+- 保留竖向灰底圆角卡片、箭头、PIT 侧向输入和账户／评价双分支。SVG 仅包含矩形与文字，无脚本、外部资源或 foreignObject；HTML 的每段可见文字与 SVG 去空白比对一致，浏览器预览与 XML 解析检查通过。
+- 本次仅改文档和图形素材，未修改回测逻辑，不启动本机测试或回测；没有本轮计算 worker。原始结果未改动，按既有授权同步 main，远端 CI 状态以对应提交为准。

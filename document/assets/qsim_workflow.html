@@ -1,0 +1,131 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="UTF-8">
+<title>QSim Workflow</title>
+<style>
+  * { box-sizing: border-box; }
+  body {
+    margin: 0;
+    padding: 24px;
+    background: #fff;
+    font-family: -apple-system, BlinkMacSystemFont,
+      "Segoe UI", "PingFang SC", sans-serif;
+    color: #222;
+  }
+  .workflow {
+    max-width: 700px;
+    margin: auto;
+    padding: 20px;
+    border: 1px solid #e8e8e8;
+    border-radius: 16px;
+  }
+  .title {
+    text-align: center;
+    font-size: 16px;
+    font-weight: 600;
+    margin: 5px 0 22px;
+  }
+  .node {
+    background: #f5f5f5;
+    border-radius: 9px;
+    padding: 17px 12px;
+    text-align: center;
+  }
+  .name {
+    font-size: 14px;
+    font-weight: 600;
+    line-height: 1.6;
+  }
+  .desc {
+    margin-top: 5px;
+    font-size: 12px;
+    color: #777;
+    line-height: 1.8;
+  }
+  .arrow {
+    text-align: center;
+    padding: 8px 0;
+    font-size: 20px;
+    color: #777;
+  }
+  .factor-row {
+    display: grid;
+    grid-template-columns: 3fr 28px 2fr;
+    gap: 8px;
+    align-items: center;
+  }
+  .side-arrow {
+    text-align: center;
+    color: #777;
+    font-size: 20px;
+  }
+  .branches {
+    display: grid;
+    grid-template-columns: 1fr 1fr;
+    gap: 10px;
+  }
+  .note {
+    margin-top: 18px;
+    font-size: 12px;
+    line-height: 1.7;
+    color: #888;
+  }
+</style>
+</head>
+<body>
+<div class="workflow">
+  <div class="title">QSim — Factor Research &amp; Backtesting Workflow</div>
+  <div class="node">
+    <div class="name">Configuration &amp; Market Data</div>
+    <div class="desc">TOML 配置：时间 · 因子 · 账户 · 输出<br>行情数据与交易日历</div>
+  </div>
+  <div class="arrow">↓</div>
+  <div class="node">
+    <div class="name">Data Loading — 按日加载</div>
+    <div class="desc">固定证券轴 · 交易日对齐 · 行情准备</div>
+  </div>
+  <div class="arrow">↓</div>
+  <div class="factor-row">
+  <div class="node">
+    <div class="name">Factor Computation</div>
+    <div class="desc">因子计算 · 仅使用已完成行情</div>
+  </div>
+    <div class="side-arrow">←</div>
+  <div class="node">
+    <div class="name">External PIT Data</div>
+    <div class="desc">available_at ≤ 决策时刻</div>
+  </div>
+  </div>
+  <div class="arrow">↓</div>
+  <div class="node">
+    <div class="name">Operations — Factor Processing</div>
+    <div class="desc">截尾（Winsorization）· 中性化 · 标准化</div>
+  </div>
+  <div class="arrow">↓</div>
+  <div class="node">
+    <div class="name">Portfolio Construction</div>
+    <div class="desc">表达式 / 权重组合 · 分组 · 目标仓位</div>
+  </div>
+  <div class="arrow">↓</div>
+  <div class="branches">
+  <div class="node">
+    <div class="name">Account Simulation</div>
+    <div class="desc">账户推进 · 成交约束<br>交易费用 · 持仓</div>
+  </div>
+  <div class="node">
+    <div class="name">Factor Evaluation</div>
+    <div class="desc">到期标签 · IC · 参考统计</div>
+  </div>
+  </div>
+  <div class="arrow">↓</div>
+  <div class="node">
+    <div class="name">Results &amp; Persistence</div>
+    <div class="desc">逐日 / 按批保存<br>Parquet · JSON · 日志 · PNG</div>
+  </div>
+  <div class="note">QSim 从配置、行情与 PIT 数据出发，
+    完成因子计算、预处理、组合构建、
+    账户回测和因子评价，最终保存研究与回测结果。</div>
+</div>
+</body>
+</html>

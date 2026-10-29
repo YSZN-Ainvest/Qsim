@@ -2,6 +2,14 @@
 
 图片是经授权入库的少量说明素材，原始日志、结果表和临时页面仍留在 NAS；不把整个运行目录加入仓库。
 
+## 流程图
+
+- [QSim 流程 HTML](qsim_workflow.html) 与 [Operations 顺序 HTML](operations_order.html) 保存用户提供的文案和样式，HTML 可在浏览器直接打开。
+- README 引用对应的 [QSim SVG](qsim_workflow.svg) 与 [Operations SVG](operations_order.svg)。SVG 按 HTML 在 748px 页面宽度下的实际浏览器布局导出，保留 700px 卡片、灰底圆角、箭头、并列分支与文字；无需 GitHub 执行内嵌 HTML/CSS。
+- SVG 仅含矩形与文字，不包含脚本、外部资源或 foreignObject；可缩放查看。修改 HTML 后需同步导出 SVG。
+
+## 真实回测输出
+
 - 配置：[tutorial.toml](../../configs/tutorial.toml)，日频 StatsEvery，2024-01-02 至 01-19，6 个示例标的、30 个交易日预热。
 - 实际命令：`bash run.sh configs/tutorial.toml`。
 - 运行 ID：`tutorial_20261029_163103_153463_fc34a258`；完成标记 COMPLETE，14 天运行、9 天有效 IC，末尾标签按规则右删失。
