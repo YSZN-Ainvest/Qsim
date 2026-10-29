@@ -9,6 +9,7 @@ test -d /mnt/nas/qinml_cache && test -w /mnt/nas/qinml_cache || {
 }
 mkdir -p "$qsim_artifacts"/{cache/matplotlib,tmp,logs,result}
 export TMPDIR="$qsim_artifacts/tmp" XDG_CACHE_HOME="$qsim_artifacts/cache"
+export SQLITE_TMPDIR="$qsim_artifacts/tmp" QSIM_CACHE_ROOT="$qsim_artifacts/cache"
 export PIP_CACHE_DIR="$qsim_artifacts/cache/pip"
 export PYTHONPYCACHEPREFIX="$qsim_artifacts/cache/pycache"
 export MPLCONFIGDIR="$qsim_artifacts/cache/matplotlib"

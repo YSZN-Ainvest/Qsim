@@ -6,7 +6,6 @@ mode = "StatsEvery"
 start = "2023-12-04"
 end = "2023-12-08"
 frequency = "0930-1450-5"
-allow_os = false
 holding_period = 1
 forecast_period = 12
 groups = 5

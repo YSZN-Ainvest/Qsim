@@ -20,7 +20,19 @@ from .alpha_events import decision_time, eligible_at
 
 
 def run(config):
-    config=load_config(config)  # OS check runs before any data are opened.
+    from threadpoolctl import threadpool_limits
+    with threadpool_limits(limits=1):
+        return _run(config)
+
+
+def _run(config):
+    config=load_config(config)
+    if config['output']['dump'] and config['output']['stream']:
+        from .stream_runner import run_stream
+        if config['backtest']['mode']!='Cohort':
+            from .stats_runner import MarketData as source
+        else: source=MarketData
+        return run_stream(config,market_class=source)
     if config['backtest']['mode'] != 'Cohort':
         from .stats_runner import run_stats
         return run_stats(config)
@@ -29,8 +41,8 @@ def run(config):
     symbols=market.symbols
     model=FactorModel(config,symbols)
     ledger=Ledger(config,symbols)
-    st=PITTable(o['st_path'],['is_st'],symbols,b['end']) if o['st_path'] else None
-    universe=PITTable(config['universe']['path'],['in_universe'],symbols,b['end']) if config['universe']['kind']=='table' else None
+    st=model.registry.get(o['st_path'])
+    universe=model.registry.get(config['universe']['path']) if config['universe']['kind']=='table' else None
     notes=['Synthetic short positions: no historical borrow inventory or recall model.',
            'Adjusted fractional units model total return; not an exact corporate-action/share ledger.',
            'VWAP limit/volume checks are bar-level approximations, not order-book queue simulation.',
@@ -45,7 +57,7 @@ def run(config):
             model.observe(day.bar(j)['close_adj'])
     pending=deque(); diagnostics=[]; positions=[]
     previous_score=np.full(len(symbols),np.nan)
-    index=0; unknown_st=0; no_signal=0; split_labels=0
+    index=0; unknown_st=0; no_signal=0
     prior_date=None
     for day_index,date in enumerate(market.run_dates):
         day=market.load_day(date)
@@ -64,8 +76,6 @@ def run(config):
                 label_price=np.where(data['vwap_outside_ohlc']==0,label_price,np.nan)
             while pending and pending[0]['due']<=index:
                 item=pending.popleft(); diag=diagnostics[item['record']]
-                if (item['date']<b['os_start']) != (date<b['os_start']):
-                    split_labels+=1;diag['label_status']='split_embargo';continue
                 target=np.divide(label_price,item['entry'],out=np.full(len(symbols),np.nan),where=item['entry']>0)-1
                 diag['ic']=correlation(item['score'],target)
                 diag['rank_ic']=correlation(item['score'],target,True)
@@ -104,8 +114,8 @@ def run(config):
     audit=dict(schema_version=1,status='complete',elapsed_seconds=round(time.monotonic()-started,3),
         frequency=market.freq,schedule=b['frequency'],tensor_axes=['day','security','bar'],
         symbols=len(symbols),days=len(market.run_dates),bars=index,warmup_days=len(market.warmup_dates),
-        os_enabled=b['allow_os'],os_start=b['os_start'],forecast_right_censored=len(pending),
-        forecast_split_embargo=split_labels,st_unknown_security_bars=unknown_st,
+        forecast_right_censored=len(pending),
+        st_unknown_security_bars=unknown_st,
         no_signal_bars=no_signal,notes=notes,execution=ledger.audit,
         config_sha256=hashlib.sha256(json.dumps(config,sort_keys=True).encode()).hexdigest())
     audit['code_sha256'] = {p.name:hashlib.sha256(p.read_bytes()).hexdigest()

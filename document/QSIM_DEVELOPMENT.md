@@ -5,17 +5,18 @@
 ## 1. 当前交接点
 
 - 最后核对日期：2026-10-29，上海时区。
-- 项目：`/home/qinml/qsim`；Python 包版本 `0.2.0`。
+- 项目：`/home/qinml/qsim`；Python 包版本 `0.3.0`。
 - 仓库：<https://github.com/YSZN-Ainvest/Qsim>；origin 为 `https://github.com/YSZN-Ainvest/Qsim.git`。
 - 本文建立前的代码基线：`eb183c1b8c43136af874696c174fed5d8622dcd1`，提交说明 `docs: simplify setup and backtest documentation`。这不是要求未来回退到该提交。
 - `v0.2.0` 标签指向初始提交 `f6c5158a00460b6ee69735b57ed5df2605deae10`；后续有文档提交，标签和 main 不必相同。
 - 已有可运行的日频、1/5/30 分钟框架；StatsEvery、StatsInterval、Cohort 三种模式。
 - 历史验证：30 项构造数据测试通过；日频 Every、5 分钟 Every、5 分钟 Interval 完成真实全 A 数据验证。详情见第 10 节；不是所有模式、频率、全时间范围均完成真实数据验证。
-- 最新功能迭代：可选 alpha livetest（f/p/c）及真实 alpha checkpoint 已完成，版本仍为 0.2.0；全套 56 项测试通过。实际 CLI 三项均 PASS，未启用检查的季度回测与改动前结果一致。使用方法见 [LIVETEST.md](LIVETEST.md)，证据见第 12 节。
+- 最新功能迭代：v0.3 已实现默认流式落盘、共享输入、命名因子／表达式、因子线程池、多配置进程池、完整日志、独立 PNG、JSON 汇总及因子值 dump；已移除强制 OS 门禁和研究分界。71 项回归测试通过，绘图刻度修复后专项复测通过。使用方法见 [STREAMING.md](STREAMING.md)。
 - 最新独立验证：四组实际账户收益、费用、回撤、持仓及 IC 复算一致；89 天输入（含预热）与原始日线、停牌表及已生成复权因子一致。全套 39 项测试通过。参考多空收益仍分别有 30／36／33／32 天缺失，不能当成完整收益曲线。证据见第 10.2 节。
-- 本次文档任务没有启动后台回测。其他会话的任务与进程应另行核实，不要把建议清单当成已获授权的整批开发任务。
+- 本轮验收、进程池和 checkpoint 子进程均已退出，没有本轮遗留计算任务；其他会话任务另行核实。
 - 本次 livetest 验收与恢复子进程均已退出，没有本轮遗留任务。
-- 最新分钟 PIT 复核：新增 5 项边界测试通过，1／5／30 分钟 × StatsEvery／StatsInterval 六组真实小样本 f 检查全 PASS（4,944 个有效配对点，最大误差 0）。本轮只新增验证与需求记录，未实施已确认的内存／日志／绘图改造；详见第 2 节和第 12 节末尾。
+- 上一阶段分钟 PIT 复核：5 项边界测试和六组真实小样本 f 检查通过；v0.3 在此基础上完成内存／日志／绘图及并行改造，见第 12 节最新记录。
+- 当前分支 `feature/streaming-pools`，基线 24eb75e；此前功能分支 `feature/simple-factor-smoke` 保留。版本验收报告和示例结果均在 NAS，不提交 Git。
 - Git 留存：用户已授权将三因子、独立验证及 livetest 累计改动提交并同步到 GitHub 的 `feature/simple-factor-smoke` 分支；本轮同步记录见第 12 节末尾。
 
 ### 接手顺序
@@ -32,18 +33,18 @@
 
 用户要一个可持续迭代的多因子研究回测系统，最初参考其前司系统（称 ksim），但明确不要求原样复刻，只需实现业务逻辑。
 
-目标包括：日频和分钟频率、VWAP 成交、分组和多空、可配置资金与费用、标的池、起止时间、持有期和预测期、矩阵计算、可选 dump、年度和全期统计、净值／分组／IC 图、严格 IS/OS 划分。最初要求全 A、中证 500、中证 1000；由于缺历史指数成分，用户明确同意先只做全 A。
+目标包括：日频和分钟频率、VWAP 成交、分组和多空、可配置资金与费用、标的池、起止时间、持有期和预测期、矩阵计算、可选 dump、年度和全期统计、净值／分组／IC 图。用户最新要求：研究 IS/OS 划分不属于 QSim，v0.3 已移除固定边界、访问门禁及跨界标签屏蔽。最初要求全 A、中证 500、中证 1000；由于缺历史指数成分，用户明确同意先只做全 A。
 
-### 已确认的下一阶段范围（讨论已确认，尚未实施）
+### 已确认范围及当前落实情况（v0.3）
 
 - 交易近似和现有持有期解释已接受。主线为 StatsEvery／StatsInterval；Cohort 暂留兼容，不作为主要入口继续扩展。本轮不改变 StatsEvery 的时点比较均值口径。
 - 内存：事件、持仓、因子值按日／批写 Parquet 后释放；内存主要保留滚动窗口、当前账户和待到期 IC 标签。可在线累计的指标在线算，绘图／复杂汇总读取小型已保存汇总表。外部因子按批、按列读取，同一文件不按因子重复整表加载。
 - 性能验收：固定股票数、窗口和账户数量，扩大回测天数，检查内存峰值仍受控；同时记录耗时、吞吐和磁盘读写量，不能仅凭内存降低宣称高效。
 - 日志：每次运行独立 ID，保存最终配置、代码／数据版本、生命周期与进度、有效股票／因子覆盖、缺失和过期计数、未成交原因、资源与落盘进度、异常堆栈及时间／标的／阶段。普通日志按日或时间间隔汇总，异常计数加有限样例；文本和 JSONL 及时落盘。
 - 绘图：不再默认多面板 dashboard；每次回测独立目录，每张图单独 PNG。优先多空组合净值、分组净值，再输出分组收益柱状图、分组超额收益柱状图、IC／Rank IC、tvr。金额 PnL 与净值单位分开，账户结果与目标 alpha 参考结果明确区分。
-- 超额收益：按上轮已接受方案，以同研究股票池等权基准为默认、允许配置其他基准；费用与调仓口径需披露。相对净值为组别净值／基准净值。汇总指标增加 JSON，明细继续 Parquet／CSV。
-- 因子：后续补原值／处理后值／组合值 dump 和表达式因子入口；默认各因子分别截尾和当期截面标准化后组合，中性化可选，明确允许原值组合。表达式具体算子和语法另行设计。
-- 范围边界：财务、分析师原始数据仓库及研究侧训练／拟合预处理不属于 QSim 本轮范围；保留既有当期截面处理。其他缺失数据由用户与 QD 协调后再接入。本轮要求再次核查的是分钟级 bar 与 available_at 对齐及是否需要 shift。
+- 超额收益：已增加同一有效研究股票池的等权基准账户，采用相同费用、执行窗口和交易约束；相对净值为组别净值／基准净值。汇总指标已增加 JSON。任意外部指数基准尚未接入，不用分组收益均值冒充基准。
+- 因子：已增加原值／处理后值／组合值 dump 和受限表达式；默认各因子分别截尾和当期截面标准化后组合，中性化可选，允许原值组合。支持命名 alpha 和依赖 DAG，算子范围见 STREAMING.md。
+- 范围边界：财务、分析师原始数据仓库及研究侧训练／拟合预处理不属于 QSim；保留既有当期截面处理。其他缺失数据由用户与 QD 协调后再接入。分钟级 PIT 已复核，后续并行继续通过相同检查。
 - 尚待明确：外部因子缺更时的有效期／过期策略未在本轮确认，不擅自改变现有前值沿用行为。
 
 ### 目录规则
@@ -51,7 +52,7 @@
 - 新建代码、脚本、Notebook、配置和代码文档放在 `/home/qinml`，按项目组织。
 - 新生成的缓存、结果、dump、日志、模型检查点、临时计算文件、下载缓存全部放在 `/mnt/nas/qinml_cache`。
 - 建议后续新任务使用 `/mnt/nas/qinml_cache/qsim/{cache,result,dump,tmp,logs}/`，结果按日期或 run ID 分目录。
-- 已有 QSim 默认输出 `/mnt/nas/qinml_cache/qsim_runs`，属于历史布局，可继续读取；本次没有移动或改变它。
+- v0.3 默认输出 `/mnt/nas/qinml_cache/qsim/result`；旧 `/mnt/nas/qinml_cache/qsim_runs` 保留可读，没有移动或删除历史结果。
 - 根目录必须是 `/mnt/nas/qinml_cache`，不是 `/nas/qinml_cache`。
 - 执行前设置 TMPDIR、XDG_CACHE_HOME、PIP_CACHE_DIR、PYTHONPYCACHEPREFIX，以及需要的绘图库／框架缓存目录。测试中的 TemporaryDirectory 也须落在 NAS。
 - NAS 不可访问或不可写时报告，不能静默改写本机磁盘。
@@ -148,9 +149,9 @@ securities.parquet
 | 文件 | 职责 |
 |---|---|
 | `qsim/__init__.py`、`cli.py`、`__main__.py` | Python `run(config)` 和 CLI 入口 |
-| `config.py` | 默认值、TOML 合并、类型／范围验证、频率解析、OS 开关检查 |
+| `config.py` | 默认值、TOML／命名 alpha、类型验证、频率与表达式依赖检查；旧 OS 项弃用并忽略 |
 | `data.py` | MarketData、DayCube，按日读取缓存与原始日线 |
-| `pit.py` | available_at 驱动的历史可用数据表 |
+| `pit.py`、`pit_store.py`、`source_cache.py` | 按 available_at 查询的分块共享 PIT 索引，版本化 Arrow 行情缓存 |
 | `factors.py` | 因子历史窗口、外部因子、加权组合 |
 | `operations.py` | MAD 截尾、OLS 中性化、标准化、分组 |
 | `runner.py` | 主入口及旧 Cohort 调度；新模式转交 stats_runner |
@@ -159,7 +160,9 @@ securities.parquet
 | `engine.py` | 基础账户和旧滚动批次 Cohort |
 | `target_engine.py` | 新模式的 TargetLedger，按目标持仓执行约束 |
 | `metrics.py` | 日净值、年度／全期统计、相关性、HAC t 值 |
-| `report.py` | CSV／Parquet／PNG、审计文件和完成标记 |
+| `run_store.py`、`stream_runner.py`、`online_metrics.py` | 逐日／批次 Parquet、在线统计、日志、资源监控、大结果按需读取 |
+| `expressions.py`、`batch.py`、`resources.py` | 受限表达式、受资源预算约束的多配置进程池；因子线程池在 factors.py |
+| `report.py` | 独立 PNG、严格 JSON、有限点绘图及旧内存路径导出 |
 | `experiments.py`、`tests/test_experiments.py` | 2–5 因子分别及组合串行运行；信号、成交、IC、账户对账检查与因子公式测试 |
 | `alpha_events.py` | 普通回测与 livetest 共用的决策时点、信号计划、标的／ST 过滤 |
 | `input_policy.py` | 输入文件指纹与按可用时间截断／扰动，先于行情 pivot 和因子处理 |
@@ -171,7 +174,7 @@ securities.parquet
 
 行情数组按 `[day, security, bar]` 组织，每次 DayCube 的 day 维长度为 1。固定证券轴通过证券表构造，各天有效池可变化；真实验证的全 A 轴含 5,939 标识，不意味着每一天都持有这些股票。
 
-数据按日加载，但事件、诊断、部分时点结果和外部 PIT 表仍会占内存。不能把“按日读取”理解为任意全历史分钟任务都具有固定峰值内存。
+默认流式路径逐日清理事件／参考统计、按批导出因子值，外部 PIT 分块建索引并仅保留当前截面。输出采用 DiskTable，不隐式把全部历史装回内存；显式 to_pandas/materialize 和旧 stream=false/dump=false 路径仍可能占大量内存。固定窗口、股票数、账户数下已做天数扩展验收，不宣称任意规模分钟任务均安全。
 
 因子计算只使用已结束 bar 和 `available_at <= decision_time` 的表数据。先算信号、执行相应窗口，再将完成价格加入因子历史；日频 08:00 不允许使用当日全天收盘来构造信号。
 
@@ -253,11 +256,10 @@ reported_return = (raw_return - cost_return) / nbar
 - 账户使用可分割的后复权单位，没有整手限制和逐笔公司行动股数账本；不是券商实际股数模拟。
 - 不在回测末尾强制平仓。每步核对 `净资产变化 = hold_pnl + trade_pnl - tradecost`。
 
-## 7. 预测、IC 与严格 IS/OS
+## 7. 预测、IC 与研究区间
 
-- **2024-01-01 起为 OS**，`allow_os=false` 默认禁止。检查发生在读取行情前。
-- os_start 可提前，但不能推后以把 2024 年之后伪装为 IS。只有用户选择开放 OS 时才开启；不要为了示例跑通擅自改为 true。
-- 未来收益标签跨 IS/OS 边界标为 split_embargo；超出请求区间尾部标为 right_censored，保留 NaN。不能额外读尾部未来行情补齐标签。
+- v0.3 按用户要求移除固定 2024-01-01 边界、allow_os 门禁、IS/OS 统计行及 split_embargo。旧 allow_os/os_start 仅兼容读取并警告忽略，不能重新作为执行限制。
+- 研究员在系统外管理训练／验证划分。跨年标签可以正常到期计算；超过请求区间尾部仍为 right_censored、保留 NaN，不额外读取区间外行情。
 
 ```text
 entry = 信号采样索引 + stats.idelayEach
@@ -267,7 +269,7 @@ label = VWAP_adj[entry+h] / VWAP_adj[entry] - 1
 
 idelayEach 默认为 0；预测期按所选采样网格 bar 计数，可跨午休和隔夜。日频 h=5 是 5 个后续交易日采样点；分钟 h=12 是 12 个所选网格 bar，不必等于连续墙钟 60 分钟。它与成交延迟 nIntvDelay、Interval 的 nbar、Cohort 持有期是不同参数。
 
-相关至少需要 3 个有效证券。Interval 对“已到期但 Spearman 未定义”的值记 0 并加 ic_undefined；Every 保留 NaN。截尾／embargo 仍为 NaN，不得一律填零。
+相关至少需要 3 个有效证券。Interval 对“已到期但 Spearman 未定义”的值记 0 并加 ic_undefined；Every 保留 NaN。尾部截尾仍为 NaN，不得一律填零。
 
 ## 8. 配置和输出接口
 
@@ -294,13 +296,15 @@ idelayEach 默认为 0；预测期按所选采样网格 bar 计数，可跨午�
 
 Python 接口 `from qsim import run`，接受配置字典或 TOML 路径并返回 DataFrame 等结果。CLI `--validate` 只检查配置，`--no-dump` 不保存本次结果；工具自身缓存目录仍需按规则设置。
 
+v0.3 默认 dump+stream 时，summary 保留为小型 DataFrame，大明细返回 DiskTable。优先使用 iter_batches；显式 to_pandas、兼容列／索引访问或 output.materialize=true 可能加载整表。Parquet 结果以同名数据集目录保存，仍可由 pandas.read_parquet 读取。旧 dump=false/stream=false 路径仅作小样本内存参考。
+
 `--livetest f/p/c`、`--livetest f,p` 或 `--livetest all` 显式开启 alpha 检查并替代本次账户运行；不占用短参数。配置 `[livetest]` 本身不启用检查。不带参数的配置结构不新增 livetest 节；未启用时数据干预接口为空，原账户流程保持兼容。CLI 可配置 times、warmup-days、atol、rtol、report；其他选项及覆盖边界见 [LIVETEST.md](LIVETEST.md)。
 
-`./run.sh configs/simple_factors.toml --compare-factors` 运行 20 日动量、5 日反转、20 日低波动三个单因子及等权组合。日频 Every、30 日预热、5 分组、5 日 IC、2023 年一季度，不开放 OS，允许 ST 未知值。对比结果在 `/mnt/nas/qinml_cache/qsim/result/`，根目录 `comparison.csv` 汇总各组结果，全部检查通过才写 COMPLETE。通用对比入口接受 2–5 个非零权重因子，组合沿用配置权重。
+`./run.sh configs/simple_factors.toml --compare-factors` 运行 20 日动量、5 日反转、20 日低波动三个单因子及等权组合。日频 Every、30 日预热、5 分组、5 日 IC、2023 年一季度，允许 ST 未知值。对比结果在 `/mnt/nas/qinml_cache/qsim/result/`，根目录 `comparison.csv` 汇总各组结果，全部检查通过才写 COMPLETE。通用对比入口接受 2–5 个非零权重因子，组合沿用配置权重。
 
 主要导出：daily、summary、events、diagnostics、final_positions、可选 positions，Every 的 slot_daily／slot_summary，以及 stats_slots、stats_intervals、stats_sum 等模式相关表。配置 config.json、审计 audit.json 记录代码／配置／缓存目录 catalog 的哈希和异常计数。导出成功有 COMPLETE，失败可能有 INCOMPLETE；发现目录不能直接判定成功。
 
-图表有 dashboard.png、factor_analysis.png 和 Every 的 timing_comparison.png。指标按年度、IS、OS、ALL 及组别输出，包含：
+默认分别输出 long_short_nav.png、long_short_pnl.png、group_nav.png、group_returns.png、group_excess_returns.png、ic.png、turnover.png，不再默认 dashboard。指标按年度、ALL 及组别输出，包含：
 
 ```text
 from to long short return tvr net_tvr sharp dd dd_start dd_end
@@ -337,7 +341,7 @@ cd /home/qinml/qsim
 
 Arrow 等库是否接受环境变量以及实际线程数要核实，大型任务不能只凭变量宣称全部线程已限制。若需将命令输出保存为日志，写入 NAS 的带时间／run ID 子目录。不要在代码目录重定向生成 `*.log`。
 
-已有 GitHub Actions 使用构造数据跑 unittest，不需要真实 NAS 数据。远端 CI 环境与这台服务器分开；不得用远端测试通过替代本机数据接入验证。
+已有 GitHub Actions 使用构造数据跑 unittest，不需要真实 NAS 数据；CI 通过 QSIM_CACHE_ROOT 把输入缓存定向到 runner 临时目录，本机仍使用 NAS。远端 CI 环境与这台服务器分开；不得用远端测试通过替代本机数据接入验证。
 
 ## 10. 验证证据与已知限制
 
@@ -375,8 +379,8 @@ Arrow 等库是否接受环境变量以及实际线程数要核实，大型任�
 6. 数据只生成到 2026-09-30，没有自动日更或增量重建流水线。
 7. 空头、成交容量、涨跌停以研究简化模型处理；没有真实融券、盘口排队、整手股数及公司行动账本。
 8. 新统计模式没有任意 holding_period；不要为绕过配置错误默默改模式。
-9. 按日读取不消除长时间事件表／外部 PIT 表的内存增长，未做全历史 1 分钟性能和资源安全认证。
-10. 未做因子收益优化或 OS 参数调优；示例收益不能当成策略有效性结论。
+9. 默认流式路径已改为有界事件／因子缓冲，外部 PIT 状态按源共享；显式物化和旧内存模式仍受内存限制。未做全历史全 A 1 分钟／任意数量因子的容量认证。
+10. 未做因子收益优化或研究参数调优；示例收益不能当成策略有效性结论，研究划分不属于基础设施。
 11. `run.sh` 已验证 NAS 检测、缓存／临时目录重定向及数值库和 Arrow 单线程设置；尚不自动做资源预检、硬限制或压力监控。本轮真实回测单独使用 systemd 用户服务硬限制和外部监控，后续执行者仍须落实这些保护。
 12. Livetest 当前覆盖分组前组合分数，不覆盖账户状态／目标权重恢复。日历和证券轴固定；缺发布时间的缓存池／停牌／ST 暂按 08:00 可用，不能认证其真实历史可用时间。上游缓存／复权生成、表因子训练、绕过加载器的外部 I/O、自定义 RNG 对象需另行适配；PASS 不代表盈利能力。
 
@@ -501,3 +505,21 @@ Arrow 等库是否接受环境变量以及实际线程数要核实，大型任�
 - 资源：启动前 MemAvailable 约 35.6 GiB、CPU 空闲采样 91%、所查父 cgroup 无额外限制；估算小股票池、完整分钟日历及 Parquet 解析峰值低于 800 MiB。串行、库单线程、1 核／2 GiB 硬限制、MemoryHigh=1.5 GiB、无 swap，每 5 秒监控；实跑约 19.3 秒，cgroup 峰值 326.5 MiB，正常退出、MainPID=0/inactive，无遗留 worker。
 - 文件归属：修改前核实交接文档和工作目录属 qinml；结果只写 NAS 新目录，未覆盖历史报告；测试生成的少量新输入留在 NAS 临时目录，未清理服务器其他内容。
 - 后续：第 2 节已确认范围仍待实施；外部因子过期策略仍待确认。用户已要求本轮完成后 Git 提交并推送；提交主题 `test: verify minute PIT boundaries and record agreed roadmap`，实际同步以该提交与远端分支为准。未触发远端 CI。
+
+### 2026-10-29 — v0.3 流式、共享输入与并行执行
+
+- 需求：用户明确要求实施此前六项待办，增加命名 alpha 的 pools 和多配置并行，解决同源重复读／复制，保持串并行及 PIT/checkpoint 一致，并删除基础设施内的强制 OS 划分。
+- 基线／分支：24eb75e / `feature/streaming-pools`。版本由 0.2.0 升至 0.3.0。生产交易算法只增加诊断计数；新流式调度复用既有因子、账户与参考统计实现。
+- 输入与计算：CSV／Parquet 文件或分区目录按列、分块建共享 PIT SQLite 索引；一个物理源一个当期状态。批次预先合并列需求，进程只查所需列。行情通过版本化 Arrow mmap 缓存复用。因子线程池按依赖层共享只读快照并复用相同基础计算；多配置为 spawn 进程池、有界队列、限制嵌套并发、动态准入。时点账户及账户时间轴保持顺序。
+- 表达式：支持 `[alphas.NAME]`、`<NAME>` 引用和安全 AST 点运算／有限截面函数；禁止任意 Python、属性访问、下标与循环依赖。合成表达式引用处理前或处理后分量可配置；表达式内写权重时要求各 factor.weight=1。巨大常量幂转换为受控 NumPy 浮点运算，非有限输出为 NaN。
+- 存储与日志：默认逐日写事件／持仓／诊断／参考统计并清缓冲，因子三阶段值按 batch 写；在线维护年度／ALL 指标及 HAC 所需滞后。大结果返回 DiskTable。run.log／run.jsonl 记录阶段、异常、覆盖、拒单原因样例、资源和写入计数；失败保留已完成分区和 INCOMPLETE。标准 JSON 汇总将非有限值写 null。
+- 图表与基准：单独输出多空净值／金额 PnL、分组净值／收益／超额、IC 和换手图。增加同有效研究股票池、同执行／费用约束的独立等权基准账户。长曲线有限点绘制，指标仍使用全量。目视发现并修复分类轴重复刻度，图表专项测试及真实示例重绘通过。
+- 研究边界：删除固定 2024-01-01 gate、split_embargo 与固定 IS/OS 统计行；兼容读取旧 allow_os/os_start 并忽略。保留真实数据覆盖检查与 right_censored。研究划分由研究员管理，未加入训练／拟合逻辑。
+- 测试：最终完整 unittest 71 项通过（191.6 秒，all_03.log）；随后只修改绘图刻度格式，相关专项再通过（plots_01.log）。覆盖流式／内存三模式数值对照、100 列一次读取及有界 PIT 状态、表达式安全／DAG／串并行一致、真实双进程共享投影、分区 PIT 的 f/c、故障日志／残留分区、缓冲随天数稳定、跨年无门禁和独立 PNG。生产源文件无编辑器诊断、Git 空白检查通过。
+- 内存／I/O 验收：独立进程、512 股票、16 因子，32 天峰值 RSS 209.37 MiB、耗时 7.79 秒、Parquet 7.89 MiB；256 天 209.36 MiB、59.29 秒、62.94 MiB。两者事件缓冲峰值 26、待到期标签 5、因子缓冲 16,896 行相同。报告还包含进程逻辑读写计数；NFS 的物理 I/O 计数可能为 0，不代表没有读取。
+- 并行验收：4,096 股票、100 因子、20 个计算时点，1 线程 2.402 秒、2 线程 1.865 秒，约 1.29 倍；完整输出 SHA256 一致。两个真实数据配置暖缓存下，串行 7.110 秒、双进程 3.962 秒，约 1.79 倍；summary 逐项一致。均为指定样本观测，不承诺任意任务同等加速。
+- 真实数据：新 streaming_demo 使用 2024-01-02 至 01-19、6 个标的，无 OS opt-in；表达式／并行 f/p/c 全 PASS，c 创建独立恢复进程。流式结果与串行内存参考逐表一致；真实 `--config A B --pools 2` CLI 运行成功、effective pools=2。
+- 证据：性能总报告 `/mnt/nas/qinml_cache/qsim/result/streaming_acceptance_20261029_01/benchmark_summary.json`；最终 PIT／数值复验 `/mnt/nas/qinml_cache/qsim/result/streaming_acceptance_20261029_02/`；最终图表示例 `/mnt/nas/qinml_cache/qsim/result/streaming_demo_20261029_152242_386477_6aa0a73e/`。日志 `/mnt/nas/qinml_cache/qsim/logs/streaming_upgrade_20261029/`。
+- 资源：预检可用内存约 33–41 GiB、CPU 空闲约 95%，已查父 cgroup 无更低限额。整组硬上限最多 6 核／4 GiB、MemoryHigh=3 GiB、禁用 swap，内部按空闲资源和配额的 50% 收缩并发，每 5 秒外部监控。首轮全回归＋性能约 308.6 秒、cgroup 峰值 519.1 MiB；最终复验约 232.3 秒、峰值 391.3 MiB。均正常退出，MainPID=0/inactive；后续小型绘图复查亦已结束。
+- 兼容与限制：Parquet 文件变为可直接读取的分区目录，大结果默认返回方式改变；提供显式物化／旧内存路径。旧 checkpoint 因代码／结构变化需重建。默认等权基准已实现，任意外部指数基准、完整账户恢复、外部因子过期策略、GPU／分布式和全历史全 A 分钟容量认证尚未覆盖。原有 ST、券源与数据质量限制继续保留。
+- 提交／推送／CI：按已授权的 Git 留存流程，提交主题 `feat: add streaming backtests and controlled factor pools`，推送 feature/streaming-pools；不把本地验证写成远端 CI，通过状态以 Git 记录为准。

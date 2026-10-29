@@ -6,7 +6,8 @@
 - 交易：分组、多空、T+1、涨跌停、停牌、费用和成交量限制。
 - 数据：全 A 或自定义标的池，按信息可用时间接入外部因子。
 - 输出：净值、年度及全期统计、分组表现、IC 和图表。
-- 样本：2024-01-01 起为 OS，默认禁止，须设置 `allow_os = true`。
+- 计算：命名因子、表达式、因子线程池、多配置进程池；日期范围由使用者决定。
+- 存储：默认逐日／按批写 Parquet，保留当前状态和待到期标签；大结果按需读取。
 
 [统计口径](STATS.md) · [开发说明](CONTRIBUTING.md) · [版本记录](CHANGELOG.md)
 
@@ -14,6 +15,8 @@
 支持 `f`（未来数据）、`p`（历史起点）、`c`（checkpoint）及组合；不传参数保持普通回测。见 [livetest 使用说明](document/LIVETEST.md)。
 
 AI 接手与迭代记录：[开发交接文档](document/QSIM_DEVELOPMENT.md)。
+
+v0.3 新功能及兼容说明：[流式与并行使用说明](document/STREAMING.md)。
 
 ## 安装和运行
 
@@ -29,6 +32,17 @@ python -m qsim --config configs/interval_demo.toml
 ```
 
 `--validate` 只检查配置，`--no-dump` 运行但不保存结果。也可使用 `./run.sh configs/daily_demo.toml`；解释器可通过 `QSIM_PYTHON` 指定。
+
+```bash
+# 三个命名因子、表达式、独立图表及因子值导出
+./run.sh configs/streaming_demo.toml
+# 因子线程池（实际并发按可用资源收缩）
+./run.sh configs/streaming_demo.toml --factor-pools 2
+# 多配置回测进程池
+./run.sh configs/streaming_demo.toml configs/simple_factors.toml --pools 2
+```
+
+多配置任务共享版本化输入缓存并限制嵌套并发；同一账户按时间顺序处理。较大运行仍需资源预检与 cgroup 等硬限制。
 
 ## 三个简单因子试跑
 
@@ -76,6 +90,11 @@ python -m qsim --config configs/interval_demo.toml
 | `execution.enforce_t1` | 实际账户的 T+1 限制，默认开启 |
 | `operations` | ST 过滤、截尾、标准化和中性化 |
 | `output.dump` / `directory` | 是否保存 / 输出目录 |
+| `output.stream` / `materialize` | 默认流式写入／是否显式把全部结果加载为 DataFrame |
+| `output.factors` / `factor_batch_rows` | 原值、处理后值、组合值导出／写入批大小 |
+| `compute.pools` / `batch_pools` | 因子线程数／多配置进程数的请求上限 |
+| `compute.memory_per_job_mb` | 单任务内存预算；用于任务准入和运行中检查 |
+| `combine.expression` / `stage` | 合成表达式／使用 processed 或 raw 分量 |
 
 `0930-1450-5` 从 09:30 开始，最后一根 bar 为 `(14:45,14:50]`，跳过午休，每天共 46 根。因子只能使用决策时已知的信息，不能使用本根完整行情。
 
@@ -96,18 +115,23 @@ CSV、Parquet 均可。必须有 `order_book_id`、`available_at`，分别表示
 
 当前服务器的缓存为 `/mnt/nas/qinml_cache/backtesting/20260930`，覆盖 2020-01-02 至 2026-09-30；原始行情在 `/mnt/nas/data/whole_history`。代码仓库不包含这些数据。
 
-分钟数据按日读取，数组形状为 `[day, security, bar]`，每次加载一天。完整长区间的统计结果仍保存在内存中。
+分钟数据按日读取，数组形状为 `[day, security, bar]`。默认流式模式每天落盘并清理事件／参考统计缓冲；因子明细按批写入。外部因子文件按所需列、分块构建共享 PIT 索引，不再为每个因子重复加载整张表。
 
-默认结果写入 `/mnt/nas/qinml_cache/qsim_runs`，每次生成独立目录：
+默认结果写入 `/mnt/nas/qinml_cache/qsim/result`，每次生成独立运行 ID 目录；旧结果不迁移：
 
 - `daily`、`summary`、`events`：账户净值、统计和逐次损益。
 - `slot_daily`、`slot_summary`：各固定时点的独立结果。
 - `stats_*`：目标 alpha 的公式统计，详见 [STATS.md](STATS.md)。
 - `diagnostics`、`final_positions`：因子评价和期末持仓。
-- `config.json`、`audit.json`：配置、代码指纹和异常计数。
-- PNG 图片及 `COMPLETE` 完成标记。
+- `summary.json`、`config.json`、`audit.json`、`manifest.json`：严格 JSON 汇总、配置、版本、异常与输出清单。
+- `run.log`、`run.jsonl`：运行阶段、进度、覆盖率、拒单原因、资源／落盘进度和异常堆栈。
+- 单独的多空净值／金额 PnL、分组净值／收益／超额收益、IC、换手 PNG；`COMPLETE` 或失败时的 `INCOMPLETE`。
 
-Python 接口为 `from qsim import run`。`run(config)` 接受配置字典或 TOML 路径，返回 DataFrame 等结果；`dump=false` 时不写文件。
+流式模式的 `events.parquet` 等是包含多个 Parquet 分区文件的目录，`pandas.read_parquet` 可直接读取整个目录。`summary` 仍返回 DataFrame；大明细返回 `DiskTable`，支持 `iter_batches()` 和显式 `to_pandas()`。`output.materialize=true` 可恢复全量内存返回方式，但会放弃最终读取阶段的内存限制优势。
+
+Python 接口仍为 `from qsim import run`。`dump=false` 或 `stream=false` 保留小规模内存参考路径；`--no-dump` 不保存结果与运行日志，输入缓存仍可能生成。
+
+QSim 不再强制划分 IS/OS，也不屏蔽跨 2024 年的标签；旧 `allow_os`、`os_start` 参数兼容读取但忽略。研究划分由调用方管理；超过回测终点的标签仍保留 NaN。
 
 ## 当前限制
 

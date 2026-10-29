@@ -45,9 +45,9 @@ class AlphaReplay:
             raise Unsupported('Account-dependent alpha requires a checkpointable account adapter')
         o = self.config['operations']
         end = self.config['backtest']['end']
-        self.st = PITTable(o['st_path'], ['is_st'], self.market.symbols, end, self.policy) if o['st_path'] else None
+        self.st = self.model.registry.get(o['st_path'])
         u = self.config['universe']
-        self.universe = PITTable(u['path'], ['in_universe'], self.market.symbols, end, self.policy) if u['kind'] == 'table' else None
+        self.universe = self.model.registry.get(u['path']) if u['kind'] == 'table' else None
         self.events = []
         self.warmup_bars = 0
         warmup = set(self.market.warmup_dates)
@@ -72,9 +72,15 @@ class AlphaReplay:
         return dict(start=self.config['backtest']['start'], run_dates=self.market.run_dates,
                     warmup_dates=self.market.warmup_dates, warmup_bars=self.warmup_bars,
                     minimum_history=self.model.minimum_history, history_kind=self.model.history_kind,
+                    effective_factor_pools=self.model.effective_pools,
                     next_event=self.cursor, total_events=len(self.events))
 
     def run(self, until=None):
+        from threadpoolctl import threadpool_limits
+        with threadpool_limits(limits=1):
+            return self._run(until)
+
+    def _run(self, until=None):
         rows = []
         loaded_date, day = None, None
         while self.cursor < len(self.events):
@@ -159,7 +165,8 @@ def checkpoint_worker(job_path):
     result = runtime.run()
     result.to_parquet(job['output'], index=False)
     Path(job['metadata']).write_text(json.dumps(dict(pid=os.getpid(), first_event=first,
-        processed_events=runtime.processed_events, last_cursor=runtime.cursor, inputs=runtime.policy.files), indent=2))
+        processed_events=runtime.processed_events, last_cursor=runtime.cursor, inputs=runtime.policy.files,
+        effective_factor_pools=runtime.model.effective_pools), indent=2))
 
 
 if __name__ == '__main__':

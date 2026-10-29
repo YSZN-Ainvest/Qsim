@@ -68,7 +68,7 @@ class ComparisonTests(unittest.TestCase):
             comparison = result['comparison']
             self.assertEqual(comparison.experiment.tolist(), ['mom', 'rev', 'combined'])
             self.assertTrue(comparison.passed.all())
-            self.assertTrue(comparison.valid_ic_days.eq(1).all())
+            self.assertTrue(comparison.valid_ic_days.eq(2).all())
             self.assertTrue(comparison.max_accounting_error.lt(1e-6).all())
             self.assertTrue((result['output_directory'] / 'COMPLETE').is_file())
             saved = pd.read_csv(result['output_directory'] / 'comparison.csv')

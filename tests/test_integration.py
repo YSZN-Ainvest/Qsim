@@ -39,9 +39,9 @@ class IntegrationTests(unittest.TestCase):
                 result=run(config)
             self.assertFalse((Path(tmp)/'not_created').exists())
             self.assertEqual(result['diagnostics'].label_status.tolist(),
-                             ['split_embargo','complete','right_censored'])
-            self.assertEqual(set(result['summary'].period),{'2023','2024','IS','OS','ALL'})
-            self.assertEqual(result['audit']['forecast_split_embargo'],1)
+                             ['complete','complete','right_censored'])
+            self.assertEqual(set(result['summary'].period),{'2023','2024','ALL'})
+            self.assertNotIn('forecast_split_embargo',result['audit'])
             np.testing.assert_allclose(result['daily'].pnl,
                 result['daily'].hold_pnl+result['daily'].trade_pnl-result['daily'].tradecost,atol=1e-8)
             self.assertTrue(result['events'].turnover.gt(0).any())

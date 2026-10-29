@@ -25,8 +25,8 @@ def run_stats(config):
     every=b['mode']=='StatsEvery'
     calculator=(StatsEvery if every else StatsInterval)(config,symbols)
     model=FactorModel(config,symbols)
-    st=PITTable(o['st_path'],['is_st'],symbols,b['end']) if o['st_path'] else None
-    universe=PITTable(config['universe']['path'],['in_universe'],symbols,b['end']) if config['universe']['kind']=='table' else None
+    st=model.registry.get(o['st_path'])
+    universe=model.registry.get(config['universe']['path']) if config['universe']['kind']=='table' else None
     notes=['Statistics conventions are QSim choices documented in STATS.md, not an exact ksim/zsim replica.',
            'stats_* tables describe target-alpha research attribution; daily/summary/events are constrained cash simulation.',
            'Synthetic short side; adjusted fractional units; bar-level fills, no order queue model.',
@@ -106,16 +106,13 @@ def run_stats(config):
                     item['entry']=label.copy()
                 if item['due']==index:
                     diag=diagnostics[item['record']]
-                    if (item['date']<b['os_start'])!=(date<b['os_start']):
-                        diag['label_status']='split_embargo'
-                    else:
-                        target=np.divide(label,item['entry'],out=np.full(n,np.nan),where=item['entry']>0)-1
-                        diag['ic']=correlation(item['score'],target)
-                        rank=correlation(item['score'],target,True)
-                        diag['ic_undefined']=bool(not np.isfinite(rank))
-                        diag['rank_ic']=rank if every or np.isfinite(rank) else 0.
-                        diag['label_count']=int(np.count_nonzero(np.isfinite(target)&np.isfinite(item['score'])))
-                        diag['label_end']=str(row.bar_end);diag['label_status']='complete'
+                    target=np.divide(label,item['entry'],out=np.full(n,np.nan),where=item['entry']>0)-1
+                    diag['ic']=correlation(item['score'],target)
+                    rank=correlation(item['score'],target,True)
+                    diag['ic_undefined']=bool(not np.isfinite(rank))
+                    diag['rank_ic']=rank if every or np.isfinite(rank) else 0.
+                    diag['label_count']=int(np.count_nonzero(np.isfinite(target)&np.isfinite(item['score'])))
+                    diag['label_end']=str(row.bar_end);diag['label_status']='complete'
                 else:
                     remaining.append(item)
             pending=remaining
@@ -155,8 +152,8 @@ def run_stats(config):
     audit=dict(schema_version=2,status='complete',mode=b['mode'],frequency=market.freq,
         schedule=b['frequency'],symbols=n,days=len(market.run_dates),bars=index,
         portfolio_count=len(ledgers),summary_basis='comparison_mean' if every else 'single_interval_portfolio',
-        elapsed_seconds=round(time.monotonic()-started,3),os_enabled=b['allow_os'],os_start=b['os_start'],
-        forecast_right_censored=len(pending),forecast_split_embargo=int(diag.label_status.eq('split_embargo').sum()),
+        elapsed_seconds=round(time.monotonic()-started,3),
+        forecast_right_censored=len(pending),
         skipped_delay_signals=skipped_delay,st_unknown_security_bars=unknown_st,no_signal_bars=no_signal,
         execution={slot:l.audit for slot,l in ledgers.items()},notes=notes,
         config_sha256=hashlib.sha256(json.dumps(config,sort_keys=True).encode()).hexdigest(),

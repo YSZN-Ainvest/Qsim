@@ -3,14 +3,18 @@ from pathlib import Path
 import re
 import math
 import tomllib
+import warnings
+import os
 
 import pandas as pd
 
 DEFAULTS = {
     'data': {'root': '/mnt/nas/qinml_cache/backtesting/20260930',
-             'raw_root': '/mnt/nas/data/whole_history', 'warmup_days': 40},
+             'raw_root': '/mnt/nas/data/whole_history', 'warmup_days': 40,
+             'cache_directory': os.environ.get('QSIM_CACHE_ROOT','/mnt/nas/qinml_cache/qsim/cache'), 'batch_rows': 4096,
+             'shared_cache': True, 'pit_columns': {}},
     'backtest': {'start': '2023-01-03', 'end': '2023-03-31', 'frequency': '0800',
-                 'allow_os': False, 'os_start': '2024-01-01', 'mode': 'StatsEvery',
+                 'mode': 'StatsEvery',
                  'holding_period': 1, 'forecast_period': 5, 'groups': 10,
                  'capital': 10000000.0},
     'stats': {'nIntvDelay': 1, 'idelayEach': 0, 'ileadEach': None,
@@ -25,8 +29,11 @@ DEFAULTS = {
                    'winsor_mad': 5.0, 'standardize': True,
                    'exposures_path': '', 'neutralize_styles': [],
                    'neutralize_industries': [], 'min_cross_section': 20},
-    'output': {'dump': True, 'directory': '/mnt/nas/qinml_cache/qsim_runs',
-               'name': 'run', 'plots': True, 'positions': False},
+    'output': {'dump': True, 'directory': '/mnt/nas/qinml_cache/qsim/result',
+               'name': 'run', 'plots': True, 'positions': False, 'factors': False,
+               'stream': True, 'materialize': False, 'csv': True, 'plot_points': 2000,'factor_batch_rows':65536},
+    'compute': {'pools': 1, 'batch_pools': 1, 'memory_per_job_mb': 512},
+    'combine': {'expression': '', 'stage': 'processed'},
     'factors': [{'name': 'momentum', 'kind': 'momentum', 'lookback': 20, 'weight': 1.0}],
 }
 
@@ -57,6 +64,15 @@ def load_config(value):
     if isinstance(value, (str, Path)):
         with open(value, 'rb') as stream:
             value = tomllib.load(stream)
+    value = deepcopy(value)
+    legacy = value.get('backtest', {})
+    removed = [k for k in ('allow_os','os_start') if k in legacy]
+    if removed:
+        warnings.warn('backtest.allow_os/os_start are retired and ignored; QSim does not impose research splits.', DeprecationWarning, stacklevel=2)
+        for key in removed: legacy.pop(key)
+    if 'alphas' in value:
+        if 'factors' in value: raise ValueError('Use either [alphas.NAME] or [[factors]], not both')
+        value['factors'] = [dict(spec,name=name) for name,spec in value.pop('alphas').items()]
     cfg = deepcopy(DEFAULTS)
     if 'livetest' in value:
         from .livetest_config import options
@@ -76,23 +92,19 @@ def load_config(value):
             cfg[key] = deepcopy(val)
     b = cfg['backtest']
     for section,names in {
-        'backtest':['allow_os'],
+        'data':['shared_cache'],
         'execution':['limit_filter','suspension_filter','reject_bad_vwap','enforce_t1'],
         'stats':['isTradeT1','cleareod'],
         'operations':['exclude_st','standardize'],
-        'output':['dump','plots','positions'],
+        'output':['dump','plots','positions','factors','stream','materialize','csv'],
     }.items():
         for name in names:
             if type(cfg[section][name]) is not bool:
                 raise ValueError(f'{section}.{name} must be true or false, not a string')
-    for field in ('start', 'end', 'os_start'):
+    for field in ('start', 'end'):
         b[field] = str(pd.Timestamp(b[field]).date())
     if b['start'] > b['end']:
         raise ValueError('start must be <= end')
-    if b['os_start'] > '2024-01-01':
-        raise ValueError('OS boundary cannot be moved later than 2024-01-01')
-    if b['end'] >= b['os_start'] and not b['allow_os']:
-        raise ValueError('OS access denied: set backtest.allow_os=true explicitly')
     aliases = {'statsevery':'StatsEvery','statsinterval':'StatsInterval','cohort':'Cohort'}
     b['mode'] = aliases.get(b['mode'],b['mode'])
     if b['mode'] not in ('StatsEvery','StatsInterval','Cohort'):
@@ -143,12 +155,16 @@ def load_config(value):
     for f in cfg['factors']:
         if not math.isfinite(float(f.get('weight',1))):
             raise ValueError('Factor weights must be finite')
-        if f.get('kind') not in ('momentum','reversal','volatility','table'):
-            raise ValueError('Factor kind must be momentum/reversal/volatility/table')
-        if f['kind'] != 'table' and (type(f.get('lookback')) is not int or f['lookback'] < 1):
+        if f.get('kind') not in ('momentum','reversal','volatility','table','expression'):
+            raise ValueError('Factor kind must be momentum/reversal/volatility/table/expression')
+        if f['kind'] not in ('table','expression') and (type(f.get('lookback')) is not int or f['lookback'] < 1):
             raise ValueError('Builtin factors need a positive integer lookback')
         if f['kind'] == 'table' and not f.get('path'):
             raise ValueError('Table factors require path and available_at timestamps')
+        if f['kind']=='expression' and not f.get('expression'):
+            raise ValueError('Expression factors require expression')
+        extra=set(f)-{'name','kind','lookback','weight','path','column','expression'}
+        if extra: raise ValueError(f'Unknown factor options: {extra}')
     if not any(float(f.get('weight', 1)) != 0 for f in cfg['factors']):
         raise ValueError('At least one factor weight must be nonzero')
     if type(cfg['data']['warmup_days']) is not int or cfg['data']['warmup_days'] < 0:
@@ -160,4 +176,18 @@ def load_config(value):
         raise ValueError('min_cross_section must be an integer >= 2')
     if not re.fullmatch(r'[A-Za-z0-9_-]+', cfg['output']['name']):
         raise ValueError('output.name must be a simple run name')
+    for section,names in [('compute',['pools','batch_pools','memory_per_job_mb']),('data',['batch_rows']),('output',['plot_points','factor_batch_rows'])]:
+        for key in names:
+            if type(cfg[section][key]) is not int or cfg[section][key]<1:
+                raise ValueError(f'{section}.{key} must be a positive integer')
+    if cfg['combine']['stage'] not in ('raw','processed'):
+        raise ValueError('combine.stage must be raw or processed')
+    from .expressions import Expression,dependency_levels
+    dependency_levels(cfg['factors'])
+    if cfg['combine']['expression']:
+        expression=Expression(cfg['combine']['expression'])
+        if not expression.names <= {f['name'] for f in cfg['factors']}:
+            raise ValueError('Combination references unknown factors')
+        if any(f.get('weight',1)!=1 for f in cfg['factors']):
+            raise ValueError('With combine.expression, put weights in the expression and keep factor.weight=1')
     return cfg

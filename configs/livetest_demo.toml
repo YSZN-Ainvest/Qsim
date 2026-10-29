@@ -7,7 +7,6 @@ start = "2023-01-03"
 end = "2023-01-20"
 frequency = "0800"
 groups = 2
-allow_os = false
 
 [universe]
 kind = "symbols"

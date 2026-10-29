@@ -31,6 +31,17 @@ def comparison_cases(config):
 def summarize_run(name, result):
     summary = result['summary']
     row = summary.loc[summary.book.eq('LS') & summary.period.eq('ALL')].iloc[0]
+    if 'validation' in result['audit']:
+        v=result['audit']['validation']
+        checks=dict(signals=v['no_signal_bars']==0 if 'no_signal_bars' in v else result['audit']['no_signal_bars']==0,
+            trades=v['traded_days']>0,ic=v['valid_ic_days']>0,accounting=v['max_accounting_error']<1e-6,
+            equity=np.isfinite(row['net']) and row['net']>0)
+        checks['signals'] = result['audit']['no_signal_bars']==0
+        return dict(experiment=name,**{key:row[key] for key in ('return','sharp','dd','IC','rank_IC','tvr')},
+            days=result['audit']['days'],min_signal_count=v['min_signal_count'],valid_ic_days=v['valid_ic_days'],
+            traded_days=v['traded_days'],no_signal_bars=result['audit']['no_signal_bars'],
+            max_accounting_error=v['max_accounting_error'],passed=all(checks.values()),
+            failed_checks=','.join(key for key,value in checks.items() if not value),output_directory=str(result['output_directory']))
     diag, daily, events = result['diagnostics'], result['daily'], result['events']
     ls = daily.loc[daily.book.eq('LS')]
     valid_ic = diag.label_status.eq('complete') & np.isfinite(diag.ic) & np.isfinite(diag.rank_ic)

@@ -3,6 +3,7 @@ from pathlib import Path
 import numpy as np
 import pandas as pd
 import pyarrow.parquet as pq
+from .source_cache import shared_frame,source_version
 
 from .config import schedule
 
@@ -64,7 +65,11 @@ class MarketData:
 
     def _frame(self, category, freq, date):
         p = self.root / category / freq / date[:4] / (date.replace('-','')+'.parquet')
-        frame = pq.read_table(p, filters=[('order_book_id','in',self.symbols)]).to_pandas()
+        if hasattr(self,'last_sources'): self.last_sources.append(source_version(p))
+        if self.config['data']['shared_cache']:
+            frame=shared_frame(p,self.config['data']['cache_directory'],symbols=self.symbols,batch_rows=self.config['data']['batch_rows'])
+        else:
+            frame = pq.read_table(p, filters=[('order_book_id','in',self.symbols)]).to_pandas()
         if self.input_policy is not None:
             self.input_policy.record(p)
             if category == 'universe':
@@ -86,6 +91,7 @@ class MarketData:
         return cal.reset_index(drop=True)
 
     def load_day(self, date):
+        self.last_sources=[]
         cal = self.day_calendar(date)
         prices = self._frame('prices', self.freq, date)
         vwap = self._frame('vwap', self.freq, date)
@@ -100,8 +106,9 @@ class MarketData:
                 tensors[col] = arr[None, :, :]
         pool = self._frame('universe','all_a',date).set_index('order_book_id').reindex(self.symbols)
         raw_path = self.raw / 'daily_bar' / date[:4] / (date.replace('-','')+'.csv')
-        raw = pd.read_csv(raw_path,
-                          usecols=['order_book_id','close','limit_up','limit_down'])
+        self.last_sources.append(source_version(raw_path))
+        columns=['order_book_id','close','limit_up','limit_down']
+        raw = shared_frame(raw_path,self.config['data']['cache_directory'],columns,self.symbols,self.config['data']['batch_rows']) if self.config['data']['shared_cache'] else pd.read_csv(raw_path,usecols=columns)
         if self.input_policy is not None:
             self.input_policy.record(raw_path)
             # Raw daily prices are end-of-day inputs, unavailable to an 08:00 alpha.

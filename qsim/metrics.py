@@ -46,11 +46,11 @@ def daily_curve(events):
 
 
 def report_metrics(curve,diagnostics,config):
-    rows=[]; boundary=config['backtest']['os_start']
+    rows=[]
     for book,full in curve.groupby('book',sort=False):
         full=full.sort_values('date')
         periods=[(str(y),full.loc[full.date.str[:4].eq(y)]) for y in full.date.str[:4].unique()]
-        periods += [('IS',full.loc[full.date<boundary]),('OS',full.loc[full.date>=boundary]),('ALL',full)]
+        periods += [('ALL',full)]
         for period,part in periods:
             if part.empty:
                 continue

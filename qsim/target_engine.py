@@ -42,6 +42,7 @@ class TargetLedger(Ledger):
         sellable = np.maximum(inventory-self.today,0.) if e['enforce_t1'] else inventory
         self.audit['t1_blocked_cells'] += int(np.count_nonzero(reduction>sellable+1e-10))
         request = -np.sign(self.q)*reduction
+        self.audit_request(request,market,day,valid,buy,sell,remaining,timestamp)
         allowed = np.where(request>0,buy[None,:],sell[None,:])
         self.audit['limit_blocked_cells'] += int(np.count_nonzero((request!=0)&~allowed&valid[None,:]))
         delta = np.where(allowed,-np.sign(self.q)*np.minimum(np.minimum(reduction,sellable),remaining),0.)
@@ -61,6 +62,7 @@ class TargetLedger(Ledger):
         remaining -= exited
         self.audit['unfilled_exit_cells'] += int(np.count_nonzero(reduction>exited+1e-10))
         addition = np.sign(desired)*np.maximum(np.abs(desired)-np.abs(self.q),0.)
+        self.audit_request(addition,market,day,valid,buy,sell,remaining,timestamp)
         allowed = np.where(addition>0,buy[None,:],sell[None,:])
         self.audit['limit_blocked_cells'] += int(np.count_nonzero((addition!=0)&~allowed&valid[None,:]))
         addition = np.where(allowed,np.sign(addition)*np.minimum(np.abs(addition),remaining),0.)
@@ -71,6 +73,7 @@ class TargetLedger(Ledger):
         rate = (e['fee_bps']+e['slippage_bps']+e['sell_tax_bps'])/10000
         scale = np.minimum(1.,headroom/np.maximum(amount*(1+rate),1e-30))
         scale[:-1] = np.minimum(scale[:-1],np.maximum(self.cash[:-1],0)/np.maximum(amount[:-1]*(1+rate),1e-30))
+        self.audit['cash_or_gross_limited_books']=self.audit.get('cash_or_gross_limited_books',0)+int(np.count_nonzero((scale<1-1e-12)&(amount>0)))
         addition *= scale[:,None]
         extra_cost,extra_turn = self._trade(addition,safe_fill)
         costs += extra_cost;turn += extra_turn;total_delta += addition

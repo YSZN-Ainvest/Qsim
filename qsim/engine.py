@@ -25,6 +25,22 @@ class Ledger:
         self.records = []
         self.audit = {'t1_blocked_cells':0,'limit_blocked_cells':0,
                       'unfilled_exit_cells':0,'stale_mark_cells':0,'entry_signals':0}
+        self.audit_samples=[]
+
+    def audit_request(self,requested,market,day,valid,buy,sell,capacity,timestamp):
+        active=np.abs(requested)>1e-10
+        allowed=np.where(requested>0,buy[None,:],sell[None,:])
+        conditions={
+            'suspension_or_unknown':active&(day.suspended!=0)[None,:] if self.cfg['execution']['suspension_filter'] else np.zeros_like(active),
+            'invalid_price_or_bar':active&~valid[None,:],
+            'directional_limit':active&valid[None,:]&~allowed,
+            'capacity_limited':active&allowed&(np.abs(requested)>capacity+1e-10),
+        }
+        for reason,mask in conditions.items():
+            key=reason+'_cells';self.audit[key]=self.audit.get(key,0)+int(mask.sum())
+            for book,security in zip(*np.nonzero(mask)):
+                if len(self.audit_samples)>=12: break
+                self.audit_samples.append(dict(timestamp=str(timestamp),book=self.names[book],instrument=self.symbols[security],reason=reason))
 
     def _trade(self, delta, fill):
         e = self.cfg['execution']
@@ -66,6 +82,7 @@ class Ledger:
                 self.audit['t1_blocked_cells'] += int(np.count_nonzero(requested))
                 continue
             allowed = np.where(requested>0,buy[None,:],sell[None,:])
+            self.audit_request(requested,market,day,valid,buy,sell,remaining,timestamp)
             self.audit['limit_blocked_cells'] += int(np.count_nonzero((requested!=0)&~allowed&valid[None,:]))
             delta = np.where(allowed,np.sign(requested)*np.minimum(np.abs(requested),remaining),0.)
             self.audit['unfilled_exit_cells'] += int(np.count_nonzero(np.abs(requested-delta)>1e-10))
@@ -84,6 +101,7 @@ class Ledger:
         targets[-2] = targets[b['groups']-1]*(previous_equity[-2]/previous_equity[b['groups']-1])
         targets[-1] = -targets[0]*(previous_equity[-1]/previous_equity[0])
         allowed = np.where(targets>=0,buy[None,:],sell[None,:])
+        self.audit_request(targets,market,day,valid,buy,sell,remaining,timestamp)
         self.audit['limit_blocked_cells'] += int(np.count_nonzero((targets!=0)&~allowed&valid[None,:]))
         delta = np.where(allowed,np.sign(targets)*np.minimum(np.abs(targets),remaining),0.)
         mark_at_fill = np.where(valid,fill,self.last)
@@ -96,6 +114,7 @@ class Ledger:
         scale = np.minimum(1.,headroom/np.maximum(requested_value*(1+rate),1e-30))
         # Long-only books additionally obey their own cash budget. Short proceeds stay segregated.
         scale[:-1] = np.minimum(scale[:-1],np.maximum(self.cash[:-1],0)/np.maximum(requested_value[:-1]*(1+rate),1e-30))
+        self.audit['cash_or_gross_limited_books']=self.audit.get('cash_or_gross_limited_books',0)+int(np.count_nonzero((scale<1-1e-12)&(requested_value>0)))
         delta *= scale[:,None]
         cost,turn = self._trade(delta,safe_fill)
         costs += cost; turnover += turn; delta_total += delta

@@ -147,13 +147,13 @@ class StatsTests(unittest.TestCase):
         with self.assertRaisesRegex(ValueError,'holding_period belongs'):
             load_config({'backtest':{'mode':'StatsEvery','holding_period':5}})
 
-    def test_new_modes_keep_split_and_tail_labels_unknown(self):
+    def test_new_modes_do_not_impose_research_splits(self):
         for mode in ['StatsEvery','StatsInterval']:
             c=config(mode);c['backtest'].update(allow_os=True,os_start='2023-12-05',forecast_period=3)
             r=self.simulate(c)
             self.assertEqual(r['diagnostics'].label_status.tolist(),
-                             ['split_embargo']*3+['complete']*3+['right_censored']*3)
-            self.assertTrue(r['diagnostics'].iloc[:3].rank_ic.isna().all())
+                             ['complete']*6+['right_censored']*3)
+            self.assertTrue(r['diagnostics'].iloc[:3].rank_ic.notna().all())
 
     def test_interval_undefined_rank_ic_zero_only_after_maturity(self):
         with tempfile.TemporaryDirectory() as tmp:

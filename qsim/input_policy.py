@@ -7,7 +7,14 @@ import pandas as pd
 
 
 def file_hash(path):
-    with Path(path).open('rb') as stream:
+    path=Path(path)
+    if path.is_dir():
+        digest=hashlib.sha256()
+        for part in sorted(path.rglob('*.parquet')):
+            digest.update(str(part.relative_to(path)).encode()+b'\0')
+            digest.update(file_hash(part).encode())
+        return digest.hexdigest()
+    with path.open('rb') as stream:
         return hashlib.file_digest(stream, 'sha256').hexdigest()
 
 

@@ -7,7 +7,6 @@ start = "2023-01-03"
 end = "2023-03-31"
 frequency = "0800"
 mode = "StatsEvery"
-allow_os = false
 forecast_period = 5
 groups = 5
 capital = 10000000.0

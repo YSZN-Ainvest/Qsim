@@ -31,15 +31,13 @@ def fixtures(n=4,price=10.):
 
 
 class CoreTests(unittest.TestCase):
-    def test_os_gate_before_open(self):
-        with patch('qsim.runner.MarketData') as source:
-            with self.assertRaisesRegex(ValueError,'OS access denied'):
-                run({'backtest':{'end':'2024-01-02'}})
-            source.assert_not_called()
-        with self.assertRaises(ValueError):
-            load_config({'backtest':{'os_start':'2025-01-01'}})
-        with self.assertRaises(ValueError):
-            load_config({'backtest':{'allow_os':'false','end':'2024-01-02'}})
+    def test_research_dates_are_not_gated(self):
+        config=load_config({'backtest':{'start':'2024-01-02','end':'2025-01-02'}})
+        self.assertNotIn('os_start',config['backtest'])
+        self.assertNotIn('allow_os',config['backtest'])
+        with self.assertWarns(DeprecationWarning):
+            legacy=load_config({'backtest':{'allow_os':False,'os_start':'2025-01-01','end':'2024-01-02'}})
+        self.assertNotIn('allow_os',legacy['backtest'])
 
     def test_schedules(self):
         self.assertEqual(schedule('0800'),('1d',None,None))

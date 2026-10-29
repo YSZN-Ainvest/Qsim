@@ -343,7 +343,7 @@ def verify_case(directory, comparison_row, symbols, days, warmup, audit):
             'tvr': (part.turnover / part.previous_equity).mean(), 'pnl': part.pnl.sum(),
             'holdret': part.hold_pnl.sum() / initial, 'traderet': part.trade_pnl.sum() / initial,
             'tradecost': part.tradecost.sum() / initial, 'trading_days': len(part), 'ic_observations': len(ic_values)}
-        for period in ('ALL', 'IS', config['backtest']['start'][:4]):
+        for period in ('ALL', config['backtest']['start'][:4]):
             for key, value in expected.items():
                 audit.equal('summary.' + key, summary.loc[(name, period), key], value, atol=1e-6 if key == 'pnl' else 1e-9)
         if name == 'LS':
@@ -377,7 +377,7 @@ def main():
         for c in configs:
             b, e, o, s = c['backtest'], c['execution'], c['operations'], c['stats']
             assert c['data'] == config['data'] and b == config['backtest']
-            assert b['mode'] == 'StatsEvery' and b['frequency'] == '0800' and not b['allow_os']
+            assert b['mode'] == 'StatsEvery' and b['frequency'] == '0800'
             assert c['universe']['kind'] == 'all_a' and c['data']['warmup_days'] >= 21
             assert not o['neutralize_styles'] and not o['neutralize_industries'] and o['standardize']
             assert o['exclude_st'] and o['st_unknown'] == 'allow' and not o['st_path']
