@@ -1,0 +1,104 @@
+# Five-year NAS example: historical all-A universe, ten equal-count score groups.
+# Complete walkthrough using the shared NAS market data.
+# Paths are literal: QSim does not expand shell variables inside TOML.
+[data]
+root = "/mnt/nas/qinml_cache/backtesting/20260930"
+raw_root = "/mnt/nas/data/whole_history"
+warmup_days = 30
+cache_directory = "/mnt/nas/qinml_cache/qsim/cache"
+batch_rows = 4096
+shared_cache = true
+pit_columns = {}
+
+[backtest]
+start = "2021-01-01"
+end = "2025-12-31"
+frequency = "0800"
+mode = "StatsEvery"
+holding_period = 1
+forecast_period = 5
+groups = 10
+capital = 10000000.0
+
+[stats]
+nIntvDelay = 1
+idelayEach = 0
+ileadEach = 5
+isTradeT1 = true
+nbar = 1
+priceMode = "vwap"
+cleareod = false
+signal_times = []
+
+[universe]
+kind = "all_a"
+symbols = []
+path = ""
+
+[alphas.momentum]
+kind = "momentum"
+lookback = 20
+weight = 1.0
+
+[alphas.reversal]
+kind = "reversal"
+lookback = 5
+weight = 1.0
+
+[combine]
+expression = "0.5*(<momentum> + <reversal>)"
+stage = "processed"
+
+[operations]
+exclude_st = true
+st_unknown = "allow"
+st_path = ""
+winsor_mad = 5.0
+standardize = true
+exposures_path = ""
+neutralize_styles = []
+neutralize_industries = []
+min_cross_section = 20
+
+[execution]
+fee_bps = 5.0
+sell_tax_bps = 0.0
+slippage_bps = 0.0
+borrow_bps_annual = 0.0
+participation = 0.01
+limit_filter = true
+suspension_filter = true
+reject_bad_vwap = true
+short_mode = "synthetic"
+enforce_t1 = true
+
+[compute]
+pools = 1
+batch_pools = 1
+memory_per_job_mb = 1024
+
+[output]
+dump = true
+directory = "/mnt/nas/qinml_cache/qsim/result"
+name = "readme_daily_5y"
+plots = true
+positions = false
+factors = false
+stream = true
+materialize = false
+csv = true
+plot_points = 2000
+factor_batch_rows = 65536
+
+[livetest]
+times = []
+starts = []
+warmup_days = 30
+samples = 3
+seed = 17
+atol = 1e-10
+rtol = 1e-8
+max_samples = 5
+max_records = 1000000
+worker_timeout = 300
+report_directory = "/mnt/nas/qinml_cache/qsim/result/livetest"

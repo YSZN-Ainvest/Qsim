@@ -55,7 +55,7 @@ QSIM_PYTHON="$PWD/.venv/bin/python" bash run.sh configs/tutorial.toml
 
 ### 2. 使用现有 NAS 数据运行
 
-先跑 [tutorial.toml](configs/tutorial.toml)：短日期范围、小标的池，开启日志、因子值、持仓和图表输出。它是使用流程示例，不是因子推荐或收益评估结论。
+先跑 [tutorial.toml](configs/tutorial.toml)：短日期范围、全A池、10分组，开启日志、因子值、持仓和图表输出，用于检查配置和dump。下文正式结果展示使用另外两份五年配置，避免用短样本曲线解释分层表现。
 
 ```bash
 # 检查配置，并打印合并默认值后的最终配置；此步不读取行情。
@@ -113,7 +113,7 @@ frequency = "0800"
 mode = "StatsEvery"
 holding_period = 1
 forecast_period = 5
-groups = 3
+groups = 10
 capital = 1000000.0
 
 [stats]
@@ -127,8 +127,8 @@ cleareod = false
 signal_times = []
 
 [universe]
-kind = "symbols"
-symbols = ["000001.XSHE", "000002.XSHE", "000004.XSHE", "000005.XSHE", "000006.XSHE", "000007.XSHE"]
+kind = "all_a"
+symbols = []
 path = ""
 
 [alphas.momentum]
@@ -154,7 +154,7 @@ standardize = true
 exposures_path = ""
 neutralize_styles = []
 neutralize_industries = []
-min_cross_section = 3
+min_cross_section = 20
 
 [execution]
 fee_bps = 5.0
@@ -241,17 +241,63 @@ stage = "processed"
 
 ## 选择回测模式
 
-| 需求 | 模式 | 账户怎样运行 |
+采样频率决定“什么时候产生信号”，回测模式决定“这些信号如何作用于账户”。同样一天 8 根 bar，Every 与 Interval 的账户含义不同。
+
+| 比较项 | StatsEvery | StatsInterval |
 |---|---|---|
-| 比较“每天 09:30 调仓”和“每天 10:00 调仓” | `StatsEvery` | 两套独立时点账户，每套每天在自己的时点调仓 |
-| 同一策略在日内连续更新仓位 | `StatsInterval` | 每个组合沿时间维护一套账户，按区间连续调整 |
-| 兼容按批次持有若干 bar 的旧研究方式 | `Cohort` | 各批次到期退出，当前作为兼容模式 |
+| 账户组织 | 每个可执行的采样时点各自维护一套策略账户 | 每个组合维护一套沿时间连续更新的账户 |
+| 信号作用 | 更新该日内时点对应的账户，不改其他时点账户 | 更新同一账户，承接上一区间的现金和持仓 |
+| 默认调仓节奏 | 每个账户每天在自己的固定时点调仓一次 | 依 nbar 对日内采样 bar 分段，逐段调仓 |
+| 主要窗口参数 | nIntvDelay、signal_times | nbar、priceMode、signal_times |
+| 主结果 | 各时点账户的等初始资金比较均值 | 该连续账户的实际日曲线 |
+| 适合回答 | 同一因子在不同日内时点执行，各自表现怎样？ | 同一策略持续接收日内信号并交易，结果怎样？ |
 
-**StatsEvery 的主结果是等初始资金的时点账户比较组合。** 例如两套账户各有 100 万，分别赚 1 万、亏 0.4 万，主结果对应平均 PnL 0.3 万、收益 0.3%；不是把 PnL 相加后仍除以 100 万。单独时点结果保留在 `slot_daily` 和 `slot_summary`。
+### StatsEvery：由 bar 网格决定独立时点账户
 
-日频 `0800` 只有一个时点：08:00 计算信号，当日全天 VWAP 作为成交窗口。分钟 `0930-1450-5` 在选定时段按 5 分钟采样，跳过午休；默认 Every 会形成多个固定时点账户。
+Every 不限于手选两个时点。默认 `signal_times=[]`、`nIntvDelay=1` 时，每个 bar 起点都产生一个信号，并对应一套独立策略：
 
-Interval 的 `nbar=2` 表示每段最多使用两根采样 bar，并以段起点信号调整目标。两种模式的完整配置、时间线、延迟和 T+1 的区别见[运行指南](document/USAGE.md#选择采样与账户模式)，公式见[统计口径](STATS.md)。
+| frequency | 每日采样 bar | 独立时点策略数 |
+|---|---:|---:|
+| `0800` | 1 | 1 |
+| `0930-1500-30` | 8 | 8 |
+| `0930-1500-5` | 48 | 48 |
+| `0930-1500-1` | 240 | 240 |
+
+表中是完整交易日、全部时点、默认执行延迟的情况。缩短窗口、筛选 signal_times 或加长延迟，都会改变实际可执行时点数；例如 `0930-1450-5` 有 46 根 bar。
+
+以全日 30 分钟、一天 8 根 bar 为例，8 个决策时点是 **09:30、10:00、10:30、11:00、13:00、13:30、14:00、14:30**。09:30 账户今天用09:30信号调仓，持有至下一交易日自己的调仓时点；10:00账户独立做同样的事。日内后续信号不会改写前一时点账户。
+
+```text
+时点账户       第一天                     第二天
+09:30         09:30信号 → 调仓 ──持有──→ 09:30信号 → 调仓
+10:00         10:00信号 → 调仓 ──持有──→ 10:00信号 → 调仓
+  …             其他时点各自独立            各自续接持仓
+14:30         14:30信号 → 调仓 ──持有──→ 14:30信号 → 调仓
+```
+
+每套时点策略内部都有分组和多空比较账簿。10分组对应 G01–G10；每组各有配置的初始资金，LS 的多头、空头两侧各分配一半资金，不能把这些比较账簿的收益直接加成一个账户收益。
+
+成交也不发生在“已经知道整根bar价格之后再回头下单”：09:30先计算信号，默认使用 `(09:30,10:00]` 的VWAP模拟成交；`nIntvDelay=2`则用下一根窗口。延迟按网格跨午休，但不跨交易日，越过当天终点的信号跳过。日频08:00只有一套策略，使用当天全天VWAP作为执行窗口。
+
+**主结果怎么汇总？** `slot_daily/slot_summary` 保留8套账户各自结果；主 `daily/summary` 对同一组合的8套等初始资金账户取比较均值。PnL金额、净资产先取均值，日收益由这条汇总曲线计算，Sharpe和回撤也在汇总曲线上计算，不能把8个Sharpe简单平均。例如两套各100万的账户分别赚1万、亏0.4万，主结果是平均PnL 0.3万、收益0.3%。
+
+### StatsInterval：同一账户逐区间承接状态
+
+Interval 不为每个日内时点新建策略账户。同一分组或LS账户的现金、持仓、费用一直沿时间推进，下一段信号会在已有持仓基础上调整。
+
+全日30分钟网格下，`nbar=1` 表示8段、最多8次目标更新；`nbar=2` 把每两根bar组成一段，形成4段，使用每段起点的因子。默认完整网格的首段为 `(09:30,10:30]`，下一段为 `(10:30,11:30]`，午休后继续，区间不跨交易日。
+
+```text
+同一账户：09:30信号 → 第一段执行 → 10:30信号 → 第二段执行 → …
+                      现金、持仓、成本连续传递
+```
+
+- `priceMode=vwap`：将段内成交额、成交量分别求和后相除；不是各bar的VWAP简单平均。`open`用段首开盘价，`close`用段尾收盘价。
+- `signal_times=[]`使用全部采样bar；若筛选为稀疏时点，nbar对选中bar列表分段，未选中bar不计入执行窗口。
+- 尾部不足nbar时截断。参考 `stats_*` 收益仍按配置nbar归一化，实际账户PnL不除以nbar。
+- `cleareod=true`只重置参考统计中的lastAlpha，不代表日终平仓；实际T+1由 `execution.enforce_t1`控制。
+
+两种模式均按配置费用和成交约束推进账户，目标权重不保证全部成交。`stats.isTradeT1`仅影响Every参考换手的均值／求和，不是实际T+1开关。完整参数见[运行指南](document/USAGE.md#选择采样与账户模式)，公式见[统计口径](STATS.md)。`Cohort`保留为按批次持有的兼容模式，新任务优先按以上调仓含义选择Every或Interval。
 
 ## 按需要运行
 
@@ -270,15 +316,60 @@ Interval 的 `nbar=2` 表示每段最多使用两根采样 bar，并以段起点
 
 同一时点的股票用 NumPy 数组向量化计算；因子按依赖层计算并复用相同基础结果；进程通过版本化缓存共享源数据。事件、持仓和因子值按日或批写出，只保留当前状态、滚动窗口和待到期标签。详见[计算与内存](document/USAGE.md#计算与内存)。
 
+### 数值精度
+
+**当前生产计算链路使用 float64（64位双精度），没有float32计算模式或自动降精度开关。** 行情截面在进入计算数组时转换为float64；外部因子数值、operations、表达式、目标权重、现金／持仓／净资产与统计累计沿用双精度。账户数值和因子值写入Parquet时为double；证券标识、日期、布尔状态和计数保留各自适用类型。
+
+float64约有15–16位十进制有效数字，不是固定保留15位小数。终端的显示位数不改变底层精度，CSV／JSON是文本格式，没有float32／float64列类型；程序读取仍应使用双精度。如果源因子先按float32存储并发生舍入，后续转成float64不能恢复丢失的信息。双精度减少数值误差，但正确性仍需靠PIT检查、账户对账和统计验证。
+
 `--no-dump` 走内存路径，不适合长任务，且不保存运行日志；输入缓存仍可能创建。生产运行保留 `dump=true, stream=true, materialize=false`。大任务先测小样本，检查可用内存、CPU 与 cgroup 配额，显式限制并发，并用调度器或 cgroup 设置硬限制。
 
 ## 查看结果
 
-运行中终端逐日打印进度，结束后显示多空组合的年度与全期统计，以及实际输出路径。详细过程及时写入文本和 JSONL 日志；图表在汇总完成后生成，不会弹出窗口，也没有 dashboard。
+运行中终端逐日打印进度，结束后显示多空组合的年度与全期完整统计，以及实际输出路径。终端按四块排版，所有已有LS汇总指标都会显示：
 
-![实际运行的终端输出](document/assets/tutorial_terminal.png)
+| 分块 | 指标 |
+|---|---|
+| 收益 Performance | 起止日期、交易日数、return、annual_return、net、pnl、sharp |
+| 回撤与持仓 Drawdown and holdings | dd、**dd_start、dd_end、winrate**、avgdd、nHold、long、short、AHD |
+| 交易与成本 Trading and costs | tvr、net_tvr、bp_mrgn、holdret、traderet、tradecost、tradecost_cash |
+| 因子评价 Factor diagnostics | IC、ICIR、rank_IC、rank_ICIR、auto_corr、Tstat、TC、ic_observations |
 
-上图是运行本页完整配置后保存的真实 stdout，经浏览器排版截图；没有改写数值。它包含逐日进度、最终摘要和输出路径。为便于复制与查询，字段解释和读取代码见[输出说明](document/OUTPUTS.md)。
+收益率、换手和胜率以小数显示，0.5表示50%；PnL和成本金额以元显示。`dd_start/dd_end`是最大回撤对应的峰值／谷值日期，`winrate`是日净收益大于0的天数占比，包含未交易日。详细过程及时写入文本和JSONL日志；图表在汇总完成后生成，不弹出窗口，也没有dashboard。
+
+### 五年、10分组的实际示例
+
+两份示例都使用 **2021-01-01 至 2025-12-31、历史全A池、10组**，保持相同费用与交易约束。不是筛选收益更好的片段，也不拿不同调仓频率的表现直接判定哪种策略更优。
+
+| 设置 | 日频 | 30分钟 |
+|---|---|---|
+| 配置 | [readme_daily_5y.toml](configs/readme_daily_5y.toml) | [readme_30m_5y.toml](configs/readme_30m_5y.toml) |
+| 频率／模式 | 0800 / StatsEvery | 0930-1500-30 / StatsEvery |
+| 每日bar／时点策略数 | 1 / 1 | 8 / 8 |
+| 分组 | G01–G10 | G01–G10 |
+| 因子窗口 | 20日动量、5日反转 | 160根动量、40根反转（完整8bar网格下约20／5交易日） |
+| IC期限 | 5根日bar | 40根30分钟bar |
+| 导出 | 流式账户明细、统计与图表；关闭大规模因子／每日持仓dump | 同左 |
+
+```bash
+# 长任务：先测短区间、确认资源和输出量，再执行完整五年配置。
+python -m qsim --config configs/readme_daily_5y.toml
+python -m qsim --config configs/readme_30m_5y.toml
+```
+
+**分层回测怎样分组？** 每个信号截面将有效股票按因子分数从低到高排序，分成尽量等数量的10组，每组内目标等权；不能分组的无效股票排除。G01最低、G10最高；分数相同时使用稳定证券顺序。各组独立运行并扣除交易费用，LS做多G10、做空G01，两侧各占一半资金。5组也支持，配置 `groups=5` 即可。
+
+分组曲线和柱状图用于观察分层差异与单调性，不要求结果一定单调。组间持仓可能因容量、停牌、T+1等约束偏离当期目标；组别净值不是无成本的前瞻收益均值。示例仍显式允许未知ST，并使用合成空头。
+
+**日频：年度／全期收益、回撤日期与胜率**
+
+![五年日频真实终端摘要](document/assets/readme_daily_5y_terminal.png)
+
+**30分钟：8时点比较组合的年度／全期摘要**
+
+![五年30分钟真实终端摘要](document/assets/readme_30m_5y_terminal.png)
+
+截图来自各自完整运行的stdout排版，数值未改；为便于阅读分为上下两张，上图展示收益与回撤，成本及全部因子指标的下半张见[五年完整结果](document/FIVE_YEAR_EXAMPLES.md)。原始日志保留全部逐日进度。字段解释和读取代码见[输出说明](document/OUTPUTS.md)。
 
 每次回测创建一个独立运行目录。下面展示结构；`part-*.parquet` 是数据文件，带 `.parquet` 后缀的上级目录是整个数据集：
 
@@ -306,23 +397,55 @@ Interval 的 `nbar=2` 表示每段最多使用两根采样 bar，并以段起点
 
 `daily/summary/events` 是受交易约束、扣除配置费用后的账户结果；`stats_*` 是目标 alpha 的参考统计。两者不能混为同一条净值。输出名称、字段、数值单位、读取方式、失败排查见[输出说明](document/OUTPUTS.md)。
 
-以下图片由同一次 NAS 数据回测直接生成，分别保存在运行目录中；这里只用来展示输出形式，不评价因子效果。
+以下图片分别由两份五年NAS数据回测直接生成。曲线保留整个区间，没有裁掉亏损年份，也没有将因子方向事后翻转。
 
-![多空组合净值](document/assets/tutorial_long_short_nav.png)
+### 日频：五年分层表现
 
-![分组净值](document/assets/tutorial_group_nav.png)
+![五年日频多空组合净值](document/assets/readme_daily_5y_long_short_nav.png)
 
-![分组收益柱状图](document/assets/tutorial_group_returns.png)
+![五年日频10分组净值](document/assets/readme_daily_5y_group_nav.png)
 
-完整图集：[金额 PnL、分组超额、IC 与换手](document/OUTPUTS.md#图表怎么看)。
+![五年日频10分组收益](document/assets/readme_daily_5y_group_returns.png)
+
+### 30分钟：五年分层表现
+
+![五年30分钟多空组合净值](document/assets/readme_30m_5y_long_short_nav.png)
+
+![五年30分钟10分组净值](document/assets/readme_30m_5y_group_nav.png)
+
+![五年30分钟10分组收益](document/assets/readme_30m_5y_group_returns.png)
+
+完整图集及年度统计：[金额PnL、分组超额、IC、换手与验证记录](document/FIVE_YEAR_EXAMPLES.md)。
 
 多空图观察净值和回撤；分组图观察不同分数组的表现；分组柱状图检查收益排序是否稳定，而不是要求每次都单调。超额图使用相同有效股票池、费用和执行约束下的等权基准，定义为“组净值 / 基准净值 − 1”。IC 和换手需要结合覆盖率、交易成本一起看。
 
 因子导出为长表，键是 `(timestamp, instrument, alpha_name, stage)`，数值列是 `value`；`stage` 分别为 `raw`、`processed`、`combined`。`output.factors=true` 才保存。普通回测的完整因子导出与 livetest 的组合分数比较是不同用途。
 
-## 验证与边界
+## Livetest：alpha 计算一致性检查
 
-`--livetest f` 检查未来输入，`p` 检查预热后改变起点的稳定性，`c` 检查新进程 checkpoint 恢复；`all` 全部执行。只比较同一时间、同一股票的 alpha，全部通过才返回 0。详见 [livetest](document/LIVETEST.md)。它验证 alpha 状态，不是账户断点续跑接口。
+livetest用于验证计算逻辑和状态恢复，不看收益是否赚钱，也不要求不同日期的因子值相等。它始终比较**同一决策时间、同一标的、同一组合alpha**在不同运行方式下的值。
+
+| 检查 | 要回答的问题 | 怎么比较 | 主要能发现什么 |
+|---|---|---|---|
+| **f — Future test** | 今天的alpha是否读到了未来输入？ | 基准完整运行，与从输入层截断／扰动目标时点之后数据的独立运行，比较截至目标时点的输出 | 未来价格、过早使用尚未发布的表值等输入依赖 |
+| **p — Past test** | 预热足够以后，改变启动日期是否影响共同区间的alpha？ | 选择多个交易日起点，各自重新初始化并取得声明的预热，只比较都完成预热后的共同区间 | 初始化、历史长度和启动日期依赖；预热不足会报数据不足 |
+| **c — Checkpoint test** | 保存状态后重启，能否接上原来的计算？ | 连续运行作为基准；多个检查点保存alpha状态，在新进程恢复，对比恢复后的全部共同输出 | 漏存滚动窗口、递归量、随机状态或数据游标，重复／漏处理事件 |
+
+```bash
+python -m qsim --config configs/tutorial.toml --livetest f
+python -m qsim --config configs/tutorial.toml --livetest p
+python -m qsim --config configs/tutorial.toml --livetest c
+python -m qsim --config configs/tutorial.toml --livetest f,p
+python -m qsim --config configs/tutorial.toml --livetest all
+```
+
+不传 `--livetest` 就是普通回测；传入后只执行检查，不同时跑资金账户回测。可以配置检查时点、预热长度、随机种子、atol/rtol和报告路径；未指定时点时确定性选取多个时点并写入JSON报告。
+
+检查会核对键集合、缺失和重复记录。浮点容差为 `abs(test-reference) <= atol + rtol*abs(reference)`；双方NaN不算有效证据，全部无效、数据不足或不支持都不能当作通过。显式请求的检查只有全部 `PASS` 才返回0，其他状态返回非零并保留报告。长区间／全市场检查有独立记录数限制，先选有充分预热的代表性短区间，不直接把多年回测当作无界livetest。
+
+c检查的是alpha状态，**不是完整账户断点续跑**；f也不能认证上游行情加工或训练过程没有泄漏。详细参数、报告与覆盖范围见 [livetest](document/LIVETEST.md)。
+
+## 当前边界
 
 当前成交模型是 bar 级模拟：支持停牌、涨跌停、T+1、费用和成交量约束；空头为合成研究仓位，未模拟券源、整手和排队。使用复权分数单位，结束时不强制平仓。外部因子缺更会沿用最新值，尚无自动过期策略。
 

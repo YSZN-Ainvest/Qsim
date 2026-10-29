@@ -37,6 +37,7 @@ qinml_cache/
 *.png
 # Reviewed documentation illustrations; raw runs remain outside the repository.
 !document/assets/tutorial_*.png
+!document/assets/readme_*_5y_*.png
 *.pdf
 verification*.json
 frequency_smoke.json

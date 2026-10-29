@@ -67,7 +67,7 @@ frequency = "0800"
 mode = "StatsEvery"
 holding_period = 1
 forecast_period = 5
-groups = 3
+groups = 10
 capital = 1000000.0
 
 [stats]

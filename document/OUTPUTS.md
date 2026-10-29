@@ -6,13 +6,22 @@
 
 ## 终端与日志
 
-回测运行中每天输出一行 `日期: 已完成天数/总天数 days; output=运行ID`，结束时显示模式、统计基础、多空账户的年度／全期摘要和输出目录。多任务可能交错输出，用运行 ID 区分。
+回测运行中每天输出一行 `日期: 已完成天数/总天数 days; output=运行ID`，结束时显示模式、统计基础、多空账户的年度／全期完整汇总和输出目录。多任务可能交错输出，用运行 ID 区分。
 
-![真实运行的终端输出](assets/tutorial_terminal.png)
+完整终端示例见[五年日频与30分钟结果](FIVE_YEAR_EXAMPLES.md)。截图取实际CLI的最终摘要，保留全部年度和ALL、四组指标；长日志中间的逐日进度不全部塞进图片，原始stdout保留在NAS。
 
-来自 [tutorial.toml](../configs/tutorial.toml) 的实际运行。截图将保存的 stdout 原文排版，未修改数值；不是手写的收益示例或交互式 dashboard。
+终端默认显示 LS，按四块排列已有汇总字段；不是只选择少数指标，也不改变磁盘结果和计算公式：
 
-终端摘要字段：
+| 分块 | 字段 |
+|---|---|
+| Performance | from、to、trading_days、return、annual_return、net、pnl、sharp |
+| Drawdown and holdings | dd、dd_start、dd_end、avgdd、winrate、nHold、long、short、AHD |
+| Trading and costs | tvr、net_tvr、bp_mrgn、holdret、traderet、tradecost、tradecost_cash |
+| Factor diagnostics | IC、ICIR、rank_IC、rank_ICIR、auto_corr、Tstat、TC、ic_observations |
+
+每块都按 period 展示年度与ALL；未来汇总新增字段会显示在 Additional metrics 中，避免再次被固定打印列遗漏。完整 summary 文件还包含各分组、long、short。未定义数值显示NaN，不用0替代。
+
+常读字段：
 
 | 列 | 含义 | 单位 |
 |---|---|---|
@@ -21,10 +30,15 @@
 | tvr | 日双边换手率的均值 | 小数，不除以2 |
 | sharp | 年化日收益 Sharpe，无风险收益取0 | 比率 |
 | dd | 最大回撤的正值幅度 | 小数 |
+| dd_start / dd_end | 最大回撤对应的峰值时点／谷值时点；初始净值为峰时标记initial | 日期／标记 |
+| winrate | 日净收益大于0的天数占比，含未交易日 | 小数，0.5=50% |
+| avgdd | 日末回撤幅度均值 | 小数 |
+| annual_return | 按有效交易日数和252日年度折算的复合年化收益 | 小数 |
+| pnl / tradecost_cash | 累计净损益／交易成本金额 | 元 |
 | IC / rank_IC | 分数与未来收益的 Pearson／Spearman 相关的时间均值 | 相关系数 |
 | nHold | 日末持仓数均值 | 个 |
 
-这里显示 LS；完整 summary 还包含各分组、long 和 short。组别的 IC/TC 是组合因子及 LS 诊断，不是每组内部重新计算。日期尾部标签未到期可以使 IC 缺失，不等于回测未成交。
+组别的 IC/TC 是组合因子及 LS 诊断，不是每组内部重新计算。日期尾部标签未到期可以使 IC 缺失，不等于回测未成交。全部统计定义见[统计公式](../STATS.md#账户统计指标)。
 
 `run.log` 适合顺序阅读，`run.jsonl` 每行一个 JSON 对象，适合过滤。包括运行 ID、时间、级别、阶段、进度、有效因子覆盖、输入版本、执行限制计数、资源、耗时和落盘量；错误包含堆栈。普通进度按日汇总，拒单保存计数和有限样例，不逐股票刷屏。
 
@@ -64,22 +78,27 @@ tail -f "$RUN_DIR/run.log"
 
 JSON 非有限浮点数保存为 null，明细表仍保留 NaN。输出目录内已经完整写出的 Parquet 分区在失败后可读，但整个 INCOMPLETE 运行不能当作完整区间结果。
 
-同次示例运行的 summary.json 中 LS／ALL 记录如下（只摘取部分字段，完整文件还含更多指标与其他组合）：
+五年日频运行的 summary.json 中 LS／ALL 记录如下（只摘取部分字段，完整文件还含更多指标与其他组合）：
 
 ```json
 {
   "book": "LS",
   "period": "ALL",
-  "from": "2024-01-02",
-  "to": "2024-01-19",
-  "return": 0.000051450015072340705,
-  "net": 1.0000514500150723,
-  "pnl": 51.45001507218694,
-  "tvr": 0.45361840347565835,
-  "sharp": 0.09092423136199264,
-  "dd": 0.020149509973267365,
-  "IC": 0.1548560472654017,
-  "rank_IC": 0.028571428571428595
+  "from": "2021-01-04",
+  "to": "2025-12-31",
+  "trading_days": 1212,
+  "return": -0.36099801411203725,
+  "annual_return": -0.08891296827399042,
+  "net": 0.6390019858879628,
+  "pnl": -3609980.1411203723,
+  "tvr": 0.6385610965896096,
+  "sharp": -0.9557101661503654,
+  "dd": 0.39614492284941916,
+  "dd_start": "2021-02-04",
+  "dd_end": "2025-12-16",
+  "winrate": 0.4636963696369637,
+  "IC": -0.0032419517068874378,
+  "rank_IC": -0.00842869122017463
 }
 ```
 
@@ -110,7 +129,7 @@ events.parquet/
 
 唯一业务键为 `(timestamp,instrument,alpha_name,stage)`。原值可能保留被股票池过滤的证券信息以便诊断；处理后和组合值反映有效截面。零权重依赖因子也可能导出，文件规模约随“时点数 × 股票数 × 导出分量数”增长。
 
-示例运行的真实记录（显示值保留6位小数，磁盘仍保存浮点精度）：
+以下是历史短样本dump的真实记录，用于说明字段（显示值保留6位小数，磁盘仍保存float64；不是本次关闭因子dump的五年运行记录）：
 
 | timestamp | instrument | alpha_name | stage | value |
 |---|---|---|---|---:|
@@ -167,27 +186,7 @@ Python run() 返回的小汇总是 DataFrame，大明细默认是 DiskTable。`.
 | ic.png | 每个决策时点的 IC 与 Rank IC，观察方向、稳定性及缺失 |
 | turnover.png | LS 日双边换手率，联系成本理解 |
 
-以下均为同一配置、同一次 NAS 数据运行的原始 PNG。样本只用于展示接口和阅读方式，不据此评价策略。
-
-**多空净值与金额 PnL**
-
-![多空净值](assets/tutorial_long_short_nav.png)
-
-![多空金额PnL](assets/tutorial_long_short_pnl.png)
-
-**分组净值、收益和超额**
-
-![分组净值](assets/tutorial_group_nav.png)
-
-![分组收益](assets/tutorial_group_returns.png)
-
-![分组相对收益](assets/tutorial_group_excess_returns.png)
-
-**IC 与换手**
-
-![IC与Rank IC](assets/tutorial_ic.png)
-
-![换手率](assets/tutorial_turnover.png)
+真实图集见[五年日频与30分钟结果](FIVE_YEAR_EXAMPLES.md)：每种频率分别提供10分组净值、分层收益和超额、多空净值与PnL、IC、换手，不再用短区间三组示例解释分层表现。
 
 等权基准与策略使用同一时点具备有限分数的有效证券池、相同执行与费用约束；不是外部指数，也不是分组收益平均。Every 对策略和基准都采用时点等初始资金比较均值。旧内存路径不构造该基准，超额图会注明不可用。
 
