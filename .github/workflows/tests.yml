@@ -16,7 +16,6 @@ jobs:
     env:
       MPLBACKEND: Agg
       PYTHONHASHSEED: "0"
-      QSIM_CACHE_ROOT: ${{ runner.temp }}/qsim-cache
       OPENBLAS_NUM_THREADS: "1"
       OMP_NUM_THREADS: "1"
       MKL_NUM_THREADS: "1"
@@ -28,4 +27,7 @@ jobs:
       - name: Install package
         run: python -m pip install -e .
       - name: Run tests (no NAS required)
+        env:
+          # runner context is available at step scope, not job-level env.
+          QSIM_CACHE_ROOT: ${{ runner.temp }}/qsim-cache
         run: python -m unittest discover -s tests -v

@@ -17,6 +17,7 @@
 - 本次 livetest 验收与恢复子进程均已退出，没有本轮遗留任务。
 - 上一阶段分钟 PIT 复核：5 项边界测试和六组真实小样本 f 检查通过；v0.3 在此基础上完成内存／日志／绘图及并行改造，见第 12 节最新记录。
 - 当前分支 `feature/streaming-pools`，基线 24eb75e；此前功能分支 `feature/simple-factor-smoke` 保留。版本验收报告和示例结果均在 NAS，不提交 Git。
+- CI 修复：e6b6276 的工作流因 job.env 不支持 runner.temp 在测试启动前被拒绝；已将缓存变量移至测试 step.env，远端重验结果见最新开发记录。本机测试通过不等于工作流有效。
 - Git 留存：用户已授权将三因子、独立验证及 livetest 累计改动提交并同步到 GitHub 的 `feature/simple-factor-smoke` 分支；本轮同步记录见第 12 节末尾。
 
 ### 接手顺序
@@ -523,3 +524,10 @@ Arrow 等库是否接受环境变量以及实际线程数要核实，大型任�
 - 资源：预检可用内存约 33–41 GiB、CPU 空闲约 95%，已查父 cgroup 无更低限额。整组硬上限最多 6 核／4 GiB、MemoryHigh=3 GiB、禁用 swap，内部按空闲资源和配额的 50% 收缩并发，每 5 秒外部监控。首轮全回归＋性能约 308.6 秒、cgroup 峰值 519.1 MiB；最终复验约 232.3 秒、峰值 391.3 MiB。均正常退出，MainPID=0/inactive；后续小型绘图复查亦已结束。
 - 兼容与限制：Parquet 文件变为可直接读取的分区目录，大结果默认返回方式改变；提供显式物化／旧内存路径。旧 checkpoint 因代码／结构变化需重建。默认等权基准已实现，任意外部指数基准、完整账户恢复、外部因子过期策略、GPU／分布式和全历史全 A 分钟容量认证尚未覆盖。原有 ST、券源与数据质量限制继续保留。
 - 提交／推送／CI：按已授权的 Git 留存流程，提交主题 `feat: add streaming backtests and controlled factor pools`，推送 feature/streaming-pools；不把本地验证写成远端 CI，通过状态以 Git 记录为准。
+
+### 2026-10-29 — 修复 GitHub Actions 上下文错误
+
+- 依据：用户截图及远端 run 40836549161。e6b6276 在工作流解析阶段失败，未启动测试；不是 71 项本地测试的执行失败。
+- 原因与改动：GitHub 的 jobs.<job_id>.env 不支持 runner 上下文；将 QSIM_CACHE_ROOT 的 runner.temp 表达式移至测试步骤 env。依据官方 contexts 的 Context availability 表；保留 NAS 无关的 CI 临时缓存和原触发条件，不改回测算法。
+- 验证：检查差异与官方上下文范围，Git 空白检查通过。推送后使用 workflow_dispatch 主动验证当前分支；该远端结果另行追加，不预填成功。此前“功能分支 push 不触发”的说明不适用于无效工作流解析错误。
+- 范围：只修改 CI 与交接文档；只读附件未修改，未启动本机大型计算。提交主题 `fix: scope runner cache path to test step`。
