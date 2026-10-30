@@ -10,12 +10,14 @@
 
 ## 真实回测输出
 
-### 当前五年示例
+### 当前长区间示例
 
-- 配置：[日频](../../configs/readme_daily_5y.toml)、[30分钟](../../configs/readme_30m_5y.toml)；2021–2025年历史全A池，10分组。完整指标与验证见[五年示例](../FIVE_YEAR_EXAMPLES.md)。
-- 运行ID：`readme_daily_5y_20261029_171342_503890_f9ae4c10`、`readme_30m_5y_20261029_171352_496764_b43399ef`；两者均COMPLETE，分别有1／8套StatsEvery时点策略。
-- `readme_daily_5y_*.png`、`readme_30m_5y_*.png` 中的七张结果图逐字节复制自各自运行目录；没有为了改善收益调整曲线、因子方向或筛选年份。
-- terminal／terminal_details分别是同一次CLI实际stdout的上／下半摘要截图，包含所有年度、ALL和四块指标。仅省略中间逐日进度行、增加标题及排版，数值和指标未改写；原始完整日志留NAS。
+- 配置：[日频](../../configs/readme_daily_5y.toml)、[30分钟](../../configs/readme_30m_l1_4y.toml)。日频2021–2025年固定5日反转；分钟2022–2025年买卖一档不平衡度，均历史全A池、10组。
+- 运行ID：`readme_daily_reversal5_candidate_20261030_135734_607571_82bfa4e9`、`readme_30m_l1_4y_20261030_142653_560352_6f7f7645`；两者均COMPLETE，分别有1／6套StatsEvery时点策略。完整统计与验证见[长区间示例](../FIVE_YEAR_EXAMPLES.md)。
+- `readme_daily_5y_*.png`、`readme_30m_l1_4y_*.png`中的七张结果图逐字节复制自运行目录，未修改净值或裁剪年份。
+- terminal／terminal_details为同次CLI真实stdout的上／下半摘要排版截图；标题显示可复现的公开配置命令，数值保持原样。原始日志与临时HTML留NAS。
+- 原组合取负后的日频实跑仍亏损，随后固定测试5日反转，保留相同日期／池／费用；最终日频+30.06%，分钟−64.01%，未通过修改曲线制造盈利。
+- 旧`readme_30m_5y_*.png`及旧价量配置保留为历史材料，当前README不再引用它们。原始运行记录与本次明细见开发交接。
 
 ### 历史短样本素材
 

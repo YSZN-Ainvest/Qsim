@@ -1,5 +1,5 @@
 # Five-year NAS example: historical all-A universe, ten equal-count score groups.
-# Complete walkthrough using the shared NAS market data.
+# Fixed five-day reversal candidate; all other backtest settings retained.
 # Paths are literal: QSim does not expand shell variables inside TOML.
 [data]
 root = "/mnt/nas/qinml_cache/backtesting/20260930"
@@ -35,18 +35,13 @@ kind = "all_a"
 symbols = []
 path = ""
 
-[alphas.momentum]
-kind = "momentum"
-lookback = 20
-weight = 1.0
-
 [alphas.reversal]
 kind = "reversal"
 lookback = 5
 weight = 1.0
 
 [combine]
-expression = "0.5*(<momentum> + <reversal>)"
+expression = "<reversal>"
 stage = "processed"
 
 [operations]
@@ -80,7 +75,7 @@ memory_per_job_mb = 1024
 [output]
 dump = true
 directory = "/mnt/nas/qinml_cache/qsim/result"
-name = "readme_daily_5y"
+name = "readme_daily_reversal5_candidate"
 plots = true
 positions = false
 factors = false

@@ -23,6 +23,7 @@
 - Git 留存：用户已授权更新提交并同步 GitHub；最新版统一交付到 main，本轮同步记录见第 12 节末尾。
 - 最新性能事项：P0＋P1本机验收完成，80项回归、真实5分钟f/p/c、三轮30分钟／1分钟A/B及日频／Interval补充对照通过，结果见PERFORMANCE_RESULTS。回滚基线pre-p1-20261030／01f679f保留；曾退化的小表聚合已恢复，最终方案按日批量汇总。相关任务与监控均已退出。
 - 后续中性化优化：用户仅批准多因子暴露准备复用，qsim/operations.py增加当期有界共享上下文，FactorModel按决策创建；保留独立OLS和单因子路径，无新增配置、无Numba或滚动窗口改动。6项专项、86项完整回归及局部基准通过；用户已批准提交并同步main，详情见末尾本次记录。
+- 最新示例已完成：日频采用固定5日反转，2021–2025扣费净收益+30.0638%；分钟采用外部买卖一档不平衡度，2022–2025、6套Every账户净收益−64.0056%。真实图表、配置与统计已同步；分钟实际信号覆盖沪深、未接入北交所。用户明确要求完成后提交并同步Git，最终验证与记录见末尾。
 
 ### 接手顺序
 
@@ -616,3 +617,24 @@ Arrow 等库是否接受环境变量以及实际线程数要核实，大型任�
 - 资源与证据：预检MemAvailable约40.5 GiB、CPU约94%空闲、可见父cgroup无更低配额；专项／全回归2核3GiB、基准1核1GiB，禁swap。基准9.631秒，进程峰值RSS212.9 MiB；unit结束报告MemoryPeak为0B，不当作实际零占用。JSON在result/neutralization_20261030/benchmark.json，测试和运行日志在logs/neutralization_20261030/，构造数据／livetest报告在tmp/neutralization_20261030/。全部位于NAS项目根目录。
 - 完整回归unit实际耗时3分20.329秒、CPU56.867秒、cgroup峰值250.1 MiB、swap为0，正常退出。最终三个unit均inactive、MainPID=0，无本轮遗留worker；系统MemAvailable约39.3 GiB。附件只读未改。
 - 留存：用户在验收后明确要求“git吧”，本次代码、6项测试、基准工具及文档统一提交并同步main；原始结果仍在NAS。远端CI以本提交的GitHub Actions记录为准，不将本机通过预填为远端通过。
+
+### 2026-10-30 — README示例与Level2特征更新
+
+- 用户要求日频反向、30分钟换成买一不平衡度，并明确若level2_features尚未计算则自行计算。仓库基线6404eb7，开始工作区干净；不改QSim生产回测核。Level2原项目只留代码／小样本质量报告，没有历史成品。实际quote Parquet从2022开始，分钟新示例采用2022–2025四年全A、10组。
+- 日频：configs/readme_daily_5y.toml的组合改为-0.5*(momentum+reversal)，两周试跑后完整重跑1212交易日；结果result/readme_daily_5y_20261030_115049_933820_158d2b76，COMPLETE，耗时11分25.481秒、CPU2分38.277秒、进程峰值377.0 MiB。LS净收益−57.6713%、最大回撤57.8373%；反向不保证扣费PnL取反，不得把曲线翻转成盈利。78条汇总及逐事件独立复算PASS，最大对账误差8.09e-9；证据tmp/readme_refresh_20261030/readme_daily_5y_verified.json。7张原始PNG已复制入文档，终端HTML／截图也在更新，README文字尚待统一。
+- Level2适配器：scripts/build_readme_l1_feature.py按日流式读取原quote所需45列，仅保留每个决策前9秒的记录，收齐跨批次／row group样本后调用level2_features的audit、_quote_metrics；只计算depth_imbalance_1_last，不能用这些稀疏样本计算TWAP或流量。保留最新无效快照为NaN、排除重复时间戳；严格ts<t且t-ts<=9s，单位相消，无需猜测主动买卖编码。源文件只读、前后检查size/mtime。明确映射SZ/SH/BJ至证券轴的交易所后缀，每个日期／时点／证券写显式NaN，防止外部表沿用旧值。
+- 时点与配置：新configs/readme_30m_l1_4y.toml，信号1000/1030/1100/1330/1400/1430，共6套Every策略，避免开盘沿用隔夜或午休前快照；行情仍8根30分钟bar。因子路径result/readme_l1_2022_2025_20261030/data；整个任务COMPLETE前不能把此活动目录接入正式回测，否则源版本会变化。
+- 适配验证：scripts/verify_readme_l1_feature.py与Level2 compute_features参考逐值一致，覆盖乱序和跨行组、重复时间戳、右边界、9秒边界、过期、最新无效、交易所映射、缺失日NaN；结果logs/readme_refresh_20261030/l1_verification.json。首轮试算因后缀不一致产生全NaN，随后修正；第二轮遇Pandas只读数组，已显式copy修正。旧试算产物保留作排障，不能当作正式特征。
+- 正在执行：qsim-readme-l1-full.service（5进程，原CPU500%、MemoryHigh10GiB/Max12GiB、禁swap），scripts/monitor_readme_refresh.py每5秒记录并在系统可用<8GiB或本单元内存>11GiB时仅停止本单元。输出按日Parquet＋audit JSON，源和脚本指纹在build.json，可按相同命令恢复；不得在执行中修改该builder脚本。初期单日约26–30秒、worker峰值约1GiB，cgroup含页缓存约10GiB。
+- 并行验证：已把最初14天50证券冻结到result/readme_l1_validation_20261030/data，local_readme_l1_pilot.toml用于短区间f/p/c。f/p/c各6/2/3次比较PASS，真实子进程恢复，报告result/livetest/livetest_20261030_125054_646556/report.json；49.853秒、CPU15.842秒。正常小样本回测也COMPLETE，result/readme_30m_l1_pilot_20261030_125702_380400_73e27a1b，耗时18.770秒。验证期间full限400%、check限100%/2GiB，结束后已恢复full至500%。报告和所有stdout／监控在logs/readme_refresh_20261030/，临时HTML／截图在tmp/readme_refresh_20261030/。以上相对路径均位于/mnt/nas/qinml_cache/qsim/。
+- 自动衔接：qsim-readme-l1-backtest.service已启动等待full单元结束，且只有COMPLETE.json存在才执行configs/readme_30m_l1_4y.toml；自身2核／4GiB／禁swap，不与特征计算重叠执行回测。另有monitor_readme_refresh.py监控该单元，minute.log及minute_resources.jsonl记录全过程。特征生成失败则此单元退出1，不把部分数据当作完整回测。
+- 资源调整：发现memory.high累计触发120301次，oom／max均0；当时MemAvailable约34GiB。保持CPU500%和5worker，动态将full的MemoryHigh／Max升至14／16GiB（仍低于空闲内存预算），未重启计算。确认并终止本任务旧监控PID1298928，先启动新监控后替换，15GiB主动停止阈值、系统余量8GiB阈值不变；新日志l1_resources_relaxed.jsonl。没有操作他人进程。
+- 日频候选：用户尚未回答取负仍亏损后的选择问题；为继续推进其净值向上的展示目标，已明确告知再固定测试此前提出的单独5日反转，不改日期／池／费用／交易规则、不搜索参数。local_readme_reversal5_candidate.toml，qsim-readme-daily-reversal5.service限1核／2GiB；运行时full临时400%，合计500%。daily_reversal5.log和daily_reversal5_resources.jsonl保存证据。此候选完成前不能声称盈利；仅在核验实际结果后决定展示，旧结果完整保留。
+- 日频候选已完成：result/readme_daily_reversal5_candidate_20261030_135734_607571_82bfa4e9，1212日，LS净收益+30.0638%、最大回撤21.9636%、IC0.031479；1核／2GiB、耗时13分20.916秒、CPU3分3.357秒、unit峰值1GiB、无swap，运行和监控均退出。公开readme_daily_5y.toml与该次保存的配置完全一致，保留candidate运行名前缀供追溯。78条汇总、各时点主账户均值、IC／Rank IC及逐事件对账通过，最大对账误差6.27e-9；证据tmp/readme_refresh_20261030/final_daily/。结果图和终端图已更新，全部历史年份与回撤保留。
+- 用户追问向量化为何仍慢：补做2024-09-30真实单日阶段计时，总43.5509秒，读取解压29.0163、筛选转换对齐等13.0955、质量检查1.4064、盘口指标计算0.03267。结果与已生成分区逐值一致；不是回测耗时，也不能把read_decode说成纯磁盘时间。剖析脚本/home/qinml/qsim_benchmarks/readme_l1/profile_extract.py，证据logs/readme_refresh_20261030/l1_stage_profile.json。剖析1核／2GiB，完整特征临时400%，剖析结束已恢复500%。
+- 特征生成已完成：969日、16个缺失源日期显式NaN、26232674个有限值，result/readme_l1_2022_2025_20261030/COMPLETE.json记录缺口。完整unit耗时1小时45分4.911秒、CPU5小时12分52.471秒、峰值14GiB、无swap，正常退出；最终监控MainPID=0/inactive。正式回测自动启动，运行IDreadme_30m_l1_4y_20261030_142653_560352_6f7f7645，当前正在逐日推进；不能把等待特征时的service总时长当回测耗时，使用run_complete／initialize阶段计时。
+- 分钟正式运行已COMPLETE：readme_30m_l1_4y_20261030_142653_560352_6f7f7645，969日、6个Every时点、10组、LS净收益−64.0056%、IC0.007818；97个无信号时点（16整日缺源＋2023-12-08 13:30缺有效快照），5687个有效IC、30条右删失。实际回测1241.738秒，包含initialize 175.104秒，不能用含等待的service总时长冒充回测耗时。进程峰值412.7 MiB，unit峰值3GiB、无swap，运行和监控正常退出。
+- 独立核验：分钟65条汇总、slot_daily主账户均值、IC／Rank IC及全部事件对账PASS，最大误差5.18e-9；final_minute/readme_30m_l1_4y_verified.json保存证据。两例14张结果PNG逐字节复制，4张终端图来自真实stdout排版；浏览器隐藏页的元素截图曾超时，改为按元素边界截取页面，完整字体／数字已目视确认。当前README不再引用旧30分钟价量图，但保留旧素材／配置供历史性能复现。
+- 特征最终检查：969个分区、实际行数及double schema、有限值总数与逐日audit、构建脚本及Level2库指纹核验。证据logs/readme_refresh_20261030/feature_final_check.json。证券轴包括XSHE3108、XSHG2474、BJSE357；当前映射未接入BJSE，首尾原始quote抽查仅SH／SZ。文档明确分钟有效信号覆盖沪深，不能声称北交所已覆盖；通用研究池仍按历史全A过滤。
+- 用户最后明确“ok了你就git”，完成最终检查后将代码、配置、18张文档图片及说明提交并同步main；原始数据／结果不入Git，附件只读未改。远端CI另行核实，不预填通过。
+- 最终交付检查：2份公开配置与各自config.json完全一致、14张原始结果PNG和4张终端图核对一致、87个本地文档链接存在，4个Python辅助脚本无编辑器诊断，git diff --check通过；documentation_check.json保存证据。所有本次计算unit均inactive／MainPID=0，无遗留构建或监控进程。QSim生产包未修改，不重复整场历史运行；本次push触发远端完整回归。

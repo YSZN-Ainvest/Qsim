@@ -55,7 +55,7 @@ QSIM_PYTHON="$PWD/.venv/bin/python" bash run.sh configs/tutorial.toml
 
 ### 2. 使用现有 NAS 数据运行
 
-先跑 [tutorial.toml](configs/tutorial.toml)：短日期范围、全A池、10分组，开启日志、因子值、持仓和图表输出，用于检查配置和dump。下文正式结果展示使用另外两份五年配置，避免用短样本曲线解释分层表现。
+先跑 [tutorial.toml](configs/tutorial.toml)：短日期范围、全A池、10分组，开启日志、因子值、持仓和图表输出，用于检查配置和dump。下文正式结果展示使用另外两份长区间配置，避免用短样本曲线解释分层表现。
 
 ```bash
 # 检查配置，并打印合并默认值后的最终配置；此步不读取行情。
@@ -337,24 +337,27 @@ float64约有15–16位十进制有效数字，不是固定保留15位小数。�
 
 收益率、换手和胜率以小数显示，0.5表示50%；PnL和成本金额以元显示。`dd_start/dd_end`是最大回撤对应的峰值／谷值日期，`winrate`是日净收益大于0的天数占比，包含未交易日。详细过程及时写入文本和JSONL日志；图表在汇总完成后生成，不弹出窗口，也没有dashboard。
 
-### 五年、10分组的实际示例
+### 长区间、10分组的实际示例
 
-两份示例都使用 **2021-01-01 至 2025-12-31、历史全A池、10组**，保持相同费用与交易约束。不是筛选收益更好的片段，也不拿不同调仓频率的表现直接判定哪种策略更优。
+日频使用 **2021–2025 年固定5日反转**，30分钟使用 **2022–2025 年买卖一档不平衡度**；均为历史全A池、10组，保持相同费用与交易约束。两种信号和运行区间不同，结果用于说明配置、分层与输出。
 
 | 设置 | 日频 | 30分钟 |
 |---|---|---|
-| 配置 | [readme_daily_5y.toml](configs/readme_daily_5y.toml) | [readme_30m_5y.toml](configs/readme_30m_5y.toml) |
+| 配置 | [readme_daily_5y.toml](configs/readme_daily_5y.toml) | [readme_30m_l1_4y.toml](configs/readme_30m_l1_4y.toml) |
 | 频率／模式 | 0800 / StatsEvery | 0930-1500-30 / StatsEvery |
-| 每日bar／时点策略数 | 1 / 1 | 8 / 8 |
+| 每日bar／时点策略数 | 1 / 1 | 8 / 6 |
 | 分组 | G01–G10 | G01–G10 |
-| 因子窗口 | 20日动量、5日反转 | 160根动量、40根反转（完整8bar网格下约20／5交易日） |
+| 信号覆盖 | 当期历史全A有效截面 | 沪深股票；北交所尚未接入 |
+| 因子窗口 | 5日反转，截尾后做截面标准化 | 买卖一档数量不平衡度，取决策前最新有效快照 |
 | IC期限 | 5根日bar | 40根30分钟bar |
 | 导出 | 流式账户明细、统计与图表；关闭大规模因子／每日持仓dump | 同左 |
 
+分钟示例在10:00、10:30、11:00、13:30、14:00、14:30六个时点调仓；输入为回测外预计算的 `(买一量−卖一量)/(买一量+卖一量)`。采用决策前9秒内的最新快照，缺失时显式写NaN。定义、原始数据缺口与复现步骤见[Level2示例](document/LEVEL2_EXAMPLE.md)。
+
 ```bash
-# 长任务：先测短区间、确认资源和输出量，再执行完整五年配置。
+# 长任务：先测短区间、确认资源和输出量，再执行完整配置。
 python -m qsim --config configs/readme_daily_5y.toml
-python -m qsim --config configs/readme_30m_5y.toml
+python -m qsim --config configs/readme_30m_l1_4y.toml
 ```
 
 **分层回测怎样分组？** 每个信号截面将有效股票按因子分数从低到高排序，分成尽量等数量的10组，每组内目标等权；不能分组的无效股票排除。G01最低、G10最高；分数相同时使用稳定证券顺序。各组独立运行并扣除交易费用，LS做多G10、做空G01，两侧各占一半资金。5组也支持，配置 `groups=5` 即可。
@@ -365,11 +368,11 @@ python -m qsim --config configs/readme_30m_5y.toml
 
 ![五年日频真实终端摘要](document/assets/readme_daily_5y_terminal.png)
 
-**30分钟：8时点比较组合的年度／全期摘要**
+**30分钟：6时点比较组合的年度／全期摘要**
 
-![五年30分钟真实终端摘要](document/assets/readme_30m_5y_terminal.png)
+![四年30分钟真实终端摘要](document/assets/readme_30m_l1_4y_terminal.png)
 
-截图来自各自完整运行的stdout排版，数值未改；为便于阅读分为上下两张，上图展示收益与回撤，成本及全部因子指标的下半张见[五年完整结果](document/FIVE_YEAR_EXAMPLES.md)。原始日志保留全部逐日进度。字段解释和读取代码见[输出说明](document/OUTPUTS.md)。
+截图来自各自完整运行的stdout排版，数值未改；为便于阅读分为上下两张，上图展示收益与回撤，成本及全部因子指标的下半张见[长区间完整结果](document/FIVE_YEAR_EXAMPLES.md)。原始日志保留全部逐日进度。字段解释和读取代码见[输出说明](document/OUTPUTS.md)。
 
 每次回测创建一个独立运行目录。下面展示结构；`part-*.parquet` 是数据文件，带 `.parquet` 后缀的上级目录是整个数据集：
 
@@ -397,7 +400,7 @@ python -m qsim --config configs/readme_30m_5y.toml
 
 `daily/summary/events` 是受交易约束、扣除配置费用后的账户结果；`stats_*` 是目标 alpha 的参考统计。两者不能混为同一条净值。输出名称、字段、数值单位、读取方式、失败排查见[输出说明](document/OUTPUTS.md)。
 
-以下图片分别由两份五年NAS数据回测直接生成。曲线保留整个区间，没有裁掉亏损年份，也没有将因子方向事后翻转。
+以下图片分别由两份长区间NAS数据回测直接生成。曲线保留整个区间。日频5日反转的五年扣费净收益为 **+30.06%**；一档不平衡度在当前6时点账户、费用与交易约束下，四年净收益为 **−64.01%**。图片保留实际盈亏和回撤。
 
 ### 日频：五年分层表现
 
@@ -407,13 +410,13 @@ python -m qsim --config configs/readme_30m_5y.toml
 
 ![五年日频10分组收益](document/assets/readme_daily_5y_group_returns.png)
 
-### 30分钟：五年分层表现
+### 30分钟：四年分层表现
 
-![五年30分钟多空组合净值](document/assets/readme_30m_5y_long_short_nav.png)
+![四年30分钟多空组合净值](document/assets/readme_30m_l1_4y_long_short_nav.png)
 
-![五年30分钟10分组净值](document/assets/readme_30m_5y_group_nav.png)
+![四年30分钟10分组净值](document/assets/readme_30m_l1_4y_group_nav.png)
 
-![五年30分钟10分组收益](document/assets/readme_30m_5y_group_returns.png)
+![四年30分钟10分组收益](document/assets/readme_30m_l1_4y_group_returns.png)
 
 完整图集及年度统计：[金额PnL、分组超额、IC、换手与验证记录](document/FIVE_YEAR_EXAMPLES.md)。
 
