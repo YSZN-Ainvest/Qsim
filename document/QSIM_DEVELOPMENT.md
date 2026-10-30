@@ -5,7 +5,7 @@
 ## 1. 当前交接点
 
 - 最后核对日期：2026-10-30，上海时区。
-- 最新绘图迭代：分组／LS净值默认对数轴，收益／超额柱状图用对称对数轴（±1%内线性）并标注实际百分比；按组号蓝→红配色。两份README示例共8张图已从冻结结果重绘，源数据、收益、组别及费用不变；证据见末尾记录。
+- 最新绘图迭代：分组／LS净值默认对数轴，收益／超额柱状图用对称对数轴（±1%内线性）并标注实际百分比；按用户最新要求恢复原默认分类曲线配色及蓝色柱。两份README示例共8张图从冻结结果重绘，源数据、收益、组别及费用不变；证据见末尾记录。
 - 项目：`/home/qinml/qsim`；Python 包版本 `0.3.0`。
 - 仓库：<https://github.com/YSZN-Ainvest/Qsim>；origin 为 `https://github.com/YSZN-Ainvest/Qsim.git`。
 - 本文建立前的代码基线：`eb183c1b8c43136af874696c174fed5d8622dcd1`，提交说明 `docs: simplify setup and backtest documentation`。这不是要求未来回退到该提交。
@@ -656,3 +656,11 @@ Arrow 等库是否接受环境变量以及实际线程数要核实，大型任�
 - 验证：既有test_streaming.StreamingTests.test_factor_dump_schema_logs_json_and_single_pngs通过（1项，3.722秒）；真实两例重绘核验PASS，目视检查两例分组线图和收益柱图，标签／图例完整。未重跑多年回测或完整回归。git diff --check通过。
 - 证据：/mnt/nas/qinml_cache/qsim/result/log_plots_20261030_182545_477585/verification.json及同目录新图；专项日志/mnt/nas/qinml_cache/qsim/logs/log_plots_20261030/plot_test.log。仅小型汇总表重绘，数值库单线程，进程峰值RSS302700KiB（约296MiB）；重绘与专项进程均正常退出，无后台任务。缓存／临时文件均配置到NAS。未提交或推送。
 - 留存：用户随后明确要求提交并推送。本次仅提交上述绘图实现、重绘脚本、8张授权素材及相关文档到main，费用配置不变；沿用已通过的绘图专项与真实数值核验，不重复多年回测。提交主题为`feat: use logarithmic scales for backtest charts`，远端同步及CI状态以实际Git／Actions记录为准。
+
+### 2026-10-30 — 恢复原配色，保留新坐标轴
+
+- 用户明确要求先不Git，撤回渐变配色并保留已认可的坐标轴。此前已生成本地提交ff181b7，push因无法连接本地代理127.0.0.1:17890失败；用户中断后不再请求网络权限、不再提交或推送。该本地提交保留，当前配色修正作为未提交修改。
+- qsim/report.py恢复原Matplotlib默认分类曲线颜色、默认蓝色收益／超额柱和LS线，撤去渐变及首尾组粗线强调。保留净值log轴、收益symlog轴、百分比标签和图例位置。更新README、图集、输出说明和素材来源。
+- 两份冻结结果再次重绘8张文档图，逐线／逐柱数值、组号、输入文件SHA256核验PASS；目视确认日频分组配色恢复。没有重跑回测或改变收益／费用。git diff --check通过；纯样式回退不重复完整回归。
+- 证据：/mnt/nas/qinml_cache/qsim/result/log_plots_20261030_183802_883020/verification.json及新图。重绘单进程／数值库单线程，峰值RSS305376KiB（约298MiB），正常退出，无后台worker；原运行结果和前版重绘均保留NAS。
+- 用户验收恢复原配色后的图片并再次明确授权Git提交与推送；本次以`fix: restore original chart colors with logarithmic axes`提交修正，连同此前本地ff181b7同步main。沿用上述数值／哈希验证，远端同步与CI结果以实际记录为准。

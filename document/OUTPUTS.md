@@ -182,7 +182,7 @@ Python run() 返回的小汇总是 DataFrame，大明细默认是 DiskTable。`.
 |---|---|
 | long_short_nav.png | LS 累计净值，对数纵轴，初始为1，已计配置成本 |
 | long_short_pnl.png | LS 累计金额PnL，单位元，与净值图分开 |
-| group_nav.png | 各分组净值，对数纵轴；蓝色G01最低分、红色最高组最高分 |
+| group_nav.png | 各分组净值，对数纵轴、默认分类配色；G01为最低分组 |
 | group_returns.png | 各组全期净收益柱状图，对称对数纵轴并标注真实百分比 |
 | group_excess_returns.png | `组净值 / 等权基准净值 − 1`，对称对数纵轴；不是两个收益率直接相减 |
 | ic.png | 每个决策时点的 IC 与 Rank IC，观察方向、稳定性及缺失 |

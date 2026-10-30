@@ -41,8 +41,6 @@ def plot_results(result,directory):
     curve['date']=pd.to_datetime(curve['date'])
     diag=sampled(result['diagnostics'],limit,columns=['timestamp','ic','rank_ic'])
     caption='Net of configured costs; synthetic shorts; sampled curves when needed'
-    colors=plt.get_cmap('coolwarm')(np.linspace(.05,.95,len(groups)))
-    group_colors=dict(zip(groups.book,colors))
     def nav_axis(ax,values):
         values=np.asarray(values,dtype=float)
         if np.any(np.isfinite(values)&(values<=0)):
@@ -59,7 +57,7 @@ def plot_results(result,directory):
     def group_bars(ax,values):
         values=np.asarray(values,dtype=float)
         ax.set_yscale('symlog',linthresh=.01,linscale=1)
-        bars=ax.bar(np.arange(len(groups)),values,color=colors,width=.72)
+        bars=ax.bar(np.arange(len(groups)),values,width=.72)
         ax.axhline(0,color='#475569',lw=.9)
         ax.set_ylabel('Return (symlog; linear within ±1%)')
         ax.margins(y=.18)
@@ -83,18 +81,17 @@ def plot_results(result,directory):
         fig.savefig(directory/name,dpi=150);plt.close(fig)
     ls=curve.loc[curve.book.eq('LS')]
     def ls_line(ax):
-        ax.plot(ls.date,ls.net,color='#334155',lw=1.6)
+        ax.plot(ls.date,ls.net)
         nav_axis(ax,ls.net)
     save('long_short_nav.png','Long-short NAV (initial = 1)',ls_line)
     initial=float(ls.previous_equity.iloc[0])
     save('long_short_pnl.png','Long-short cumulative PnL (CNY)',lambda ax:ax.plot(ls.date,ls.equity-initial))
     def group_lines(ax):
         for name,part in curve.loc[curve.book.str.startswith('G')].groupby('book'):
-            edge=name in (groups.book.iloc[0],groups.book.iloc[-1])
-            ax.plot(part.date,part.net,label=name,color=group_colors[name],lw=1.8 if edge else 1.1,alpha=1 if edge else .85)
+            ax.plot(part.date,part.net,label=name)
         nav_axis(ax,curve.loc[curve.book.str.startswith('G'),'net'])
         ax.legend(ncol=5,fontsize=8,loc='upper center',bbox_to_anchor=(.5,-.15),frameon=False)
-    save('group_nav.png','Group NAV (blue = lowest score; red = highest score)',group_lines)
+    save('group_nav.png','Group NAV (G01 = lowest score)',group_lines)
     save('group_returns.png','Group cumulative net returns (factor-rank order)',lambda ax:group_bars(ax,groups['return']))
     def excess(ax):
         if 'benchmark_daily' in result:
