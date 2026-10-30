@@ -1,9 +1,10 @@
 """Versioned, process-shared read caches. Builders stream; readers mmap Arrow."""
-from contextlib import contextmanager
+from contextlib import contextmanager, nullcontext
 import fcntl
 import hashlib
 import json
 import os
+import stat as stat_mode
 from pathlib import Path
 import uuid
 
@@ -17,7 +18,7 @@ import pyarrow.dataset as ds
 
 def source_version(path):
     path=Path(path).resolve();stat=path.stat()
-    if path.is_dir():
+    if stat_mode.S_ISDIR(stat.st_mode):
         digest=hashlib.sha256();size=0;count=0
         for file in sorted(path.rglob('*.parquet')):
             info=file.stat();size+=info.st_size;count+=1
@@ -30,7 +31,8 @@ def cache_path(path,root,kind,columns=None):
     version=source_version(path)
     key=hashlib.sha256(json.dumps([version,sorted(columns) if columns else None,1],sort_keys=True).encode()).hexdigest()
     directory=Path(root)/kind
-    directory.mkdir(parents=True,exist_ok=True)
+    if not directory.is_dir():
+        directory.mkdir(parents=True,exist_ok=True)
     return directory/key,version
 
 
@@ -55,7 +57,9 @@ def batches(path,columns=None,batch_rows=4096):
 def shared_frame(path,root,columns=None,symbols=None,batch_rows=4096):
     target,version=cache_path(path,root,'arrow',columns)
     target=target.with_suffix('.arrow')
-    with build_lock(target):
+    # Only cold builders serialize. A completed file becomes visible by atomic
+    # rename; warm readers never observe the temporary writer's partial file.
+    with (build_lock(target) if not target.exists() else nullcontext()):
         if not target.exists():
             temporary=target.with_name(target.name+'.'+uuid.uuid4().hex+'.tmp')
             writer=None;schema=None

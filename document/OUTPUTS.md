@@ -113,6 +113,8 @@ events.parquet/
 
 外层是一个逻辑表，内层是按写入顺序命名的分区文件。每天或每批写完即可释放内存，不必等一个大文件到最后才完成。读取整个表可直接传外层目录；需要节省内存时逐批读取。
 
+P1优化后，同日多个时点账户的events先合并、最多65,536行一批，final_positions也按此上限合批；一个分区不再对应一个时点账户，请按slot字段区分。因子批大小仍由factor_batch_rows单独控制。manifest记录逻辑行数及parts数量；写入中的隐藏临时文件不属于已完成数据集，完整写完才发布为part文件。CSV每批flush，运行失败仍保留已完成分区。
+
 ### 多配置批次
 
 多个配置统一放在第一个配置的 output.directory 下的 `batch_时间戳_ID/`。其中有 requested_configs.json、batch_config.json、batch_summary.json，以及各任务独立运行目录。实际 worker 数、每个任务状态和结果路径写在批次清单内。批次早期失败保存 batch_failure.json；一个任务失败不会把其他已完成任务的结果删掉。

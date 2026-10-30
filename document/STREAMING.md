@@ -75,6 +75,8 @@ plot_points = 2000
 
 每次生成独立运行 ID 文件夹。`events.parquet`、`daily.parquet`、`diagnostics.parquet`、`positions.parquet`、`factors.parquet` 等是**Parquet 数据集目录**，内部按批次排序命名。已经完成的分区在失败后仍可读取，不依赖一个长文件最后写 footer。
 
+P1将同日多个账户的events与期末final_positions按最多65,536行合批，减少小文件；字段和逻辑行数不变，slot仍区分账户。CSV句柄复用并每批flush；Parquet临时文件完整写完再原子发布。效果与验证见[性能记录](PERFORMANCE_RESULTS.md)。
+
 因子明细键为 `(timestamp, instrument, alpha_name, stage)`，包含 `raw`、`processed`、`combined`；数值列为 `value`。原值保留未过滤信息以便诊断，处理后值及组合值反映实际有效截面。输出中间分量包含零权重依赖，可能很大，默认关闭。
 
 这是长表导出格式。重新作为外部 PIT 因子输入前，需要选定 alpha/stage 并转换为 `order_book_id, available_at, <数值列>`；不要把包含多个阶段和因子的长表直接当作单因子宽表输入。

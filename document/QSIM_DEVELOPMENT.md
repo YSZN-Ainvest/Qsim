@@ -21,6 +21,7 @@
 - 当前维护分支为 `main`，已快进合入 `feature/streaming-pools` 的 aa2da7a，包含此前全部功能和 CI 修复。后续默认在 main 维护和交付，临时分支验证完成后及时合回；旧功能分支保留历史引用。版本验收报告和示例结果均在 NAS，不提交 Git。
 - CI 修复：e6b6276 的工作流因 job.env 不支持 runner.temp 在测试启动前被拒绝；bcdf0a4 将缓存变量移至测试 step.env，远端 run 40837614274 全部 71 项通过（34.945 秒，无跳过）。本机测试通过不等于工作流有效。
 - Git 留存：用户已授权更新提交并同步 GitHub；最新版统一交付到 main，本轮同步记录见第 12 节末尾。
+- 最新性能事项：P0＋P1本机验收完成，80项回归、真实5分钟f/p/c、三轮30分钟／1分钟A/B及日频／Interval补充对照通过，结果见PERFORMANCE_RESULTS。回滚基线pre-p1-20261030／01f679f保留；曾退化的小表聚合已恢复，最终方案按日批量汇总。相关任务与监控均已退出。
 
 ### 接手顺序
 
@@ -572,3 +573,35 @@ Arrow 等库是否接受环境变量以及实际线程数要核实，大型任�
 - 精度核验：实际行情、因子原值／处理后／组合、现金／持仓／净资产均float64；两份实际落盘数值为Parquet double，Python浮点有效尾数53位。新增test_precision用float32会折叠的1e-9信号差异和1亿元中的分币差异，验证加载、计算和导出保持双精度；本机专项通过。precision_audit.json保存运行证据。没有为了验收而改动核心计算dtype。
 - 文档和素材：新增两份五年完整配置与FIVE_YEAR_EXAMPLES，快速tutorial改为全A／10组；README直接详解Every／Interval、独立f/p/c、完整终端与float64。18张长样本素材为14张原始PNG及4张真实stdout分块截图，源结果留NAS。Operations保留八步文案并加编号，按两行右→下→左导出1008×511 SVG，文本和方向检查通过；总流程图不改。
 - 最终本机核对：新版快速tutorial亦实跑成功（23.083秒），结果为 `/mnt/nas/qinml_cache/qsim/result/tutorial_20261029_174133_215780_86261b3e/`；完成后无本轮遗留worker。7份说明的108个本地链接／锚点、30个代码块检查通过；README全文配置与实际快速配置一致，两份长配置与保存快照一致，JSON摘录及全部原始PNG逐值／逐字节匹配。报告为日志目录documentation_validation.json。此次增加1项精度回归，最终远端全套结果以本轮提交CI为准。
+
+### 2026-10-29 — 分钟性能诊断与待确认计划
+
+- 需求：评估Profiling、Numba、增量Rolling、DAG缓存、布局、并行和C++的价值。用户随后明确“先确定方向和plan，经确认后再执行”，因此停在诊断与方案，不改生产实现、不安装新依赖、不提交优化代码。
+- 现有五年30分钟运行拆分：总1452.1秒，读取36.6%、alpha2.5%、执行9.2%、写出23.2%、绘图2.3%、未细分26.2%。当前按bar推进＋截面NumPy，已有部分DAG／共享PIT／多配置并行；并非全部历史先批量算因子的C架构。
+- 新增未提交scripts/profile_backtest.py。短剖析覆盖2023-01-03至01-31共16个交易日和30日预热，2核／3GiB硬限制、禁swap。核心推进完成后在Matplotlib导入报CXXABI_1.3.15缺失，任务退出码1；后续无profiler基准未执行。未修改共享环境尝试修复，待批准后先统一正常CLI与剖析入口的启动环境。
+- 不完整剖析线索：38.3秒、约1426万调用；load_day累计21.09秒，shared_frame16.83秒，RunStore.add5.85秒，daily_curve3.75秒，rebalance1.56秒，FactorModel.compute0.43秒。累计含嵌套，不能相加或用于宣称加速。锁仅约0.77秒，不能认定为主瓶颈。
+- 证据：`/mnt/nas/qinml_cache/qsim/result/performance_20261029/baseline_profile/calls.pstats`及对应INCOMPLETE运行，日志`/mnt/nas/qinml_cache/qsim/logs/performance_20261029/baseline_profile.log`。qsim-profile-baseline已MainPID=0、ActiveState=failed，没有遗留worker；最后有效日进程峰值约309.6MiB。
+- 交付[PERFORMANCE_PLAN.md](PERFORMANCE_PLAN.md)，建议先确认P0基准＋P1输入／对齐／日末统计／小文件输出；长窗口缓存、公共子表达式和Numba依新剖析决定，整系统C++不在本轮。保持float64和PIT／checkpoint／账户口径。当前工作区仅诊断与文档待确认，主分支已发布的01f679f生产代码保持不变。
+
+### 2026-10-30 — P0完整基准与再次范围审核
+
+- 用户批准P0＋P1后，按事实核验流程复现了导入顺序引起的libstdc++加载差异，诊断脚本改为与正常CLI一致的NumPy／pandas先导入；未升级共享环境。增加互斥阶段计时、失败报告及版本信息，固定源码快照用于后续A/B。
+- 基准结果及NAS证据见PERFORMANCE_PLAN最新P0进展。30分钟16日无剖析19.53秒，1分钟2日64.96秒；1分钟峰值进程RSS1468.6MiB。在2核／4GiB硬限制下整组112.671秒退出0，监控已结束；未把单轮或不同规模运行当作加速证明。
+- 用户随后询问“现在在弄什么优化，让我审核”，因此只汇报已完成P0和拟实施P1，生产qsim目录尚无改动。保持现有待提交文档和诊断脚本，等待审核后再进入P1。
+
+### 2026-10-30 — P1实施与验证
+
+- 用户确认按审核范围修改，有问题按Git回滚，并明确调好前不commit／push main。基线01f679f及本地标签pre-p1-20261030保留；旧生产包快照在/home/qinml/qsim_benchmarks/baseline_01f679f。当前只改工作区，诊断脚本和文档也未提交。
+- 第一包：证券／bar轴映射复用，每帧多字段scatter；公共[1,security,bar]接口不变，物理bar截面连续float64。日历按日期索引，PIT干预仍先于矩阵构建。暖Arrow缓存跳过构建锁，冷构建仍加锁复查和原子rename，保持mmap，不换读取库。
+- 第一包验证：30分钟16日及1分钟2日全A输出，与旧版所有逻辑表、账户限制计数一致，最大数值差0；报告logs/p1_20261030/compare_input{30,1}.json。单轮受冷热状态影响，不当作加速证明。缓存测试起初在NAS删除仍被mmap引用的测试文件时失败，释放测试DataFrame引用后通过；没有改生产层强制复制来掩盖问题。
+- 第二包：日曲线按列聚合，首末行使用实际事件边界，不用跳NaN的first／last；Inf诊断输入保留原Series.sum路径。日末净值分母用映射更新；事件同日合并，期末持仓按最多65536行批写；CSV句柄复用并每批flush，完成标记前关闭；Parquet临时分区完成后原子rename。绘图仅读必要列。没有改变账户交易、因子公式或checkpoint状态。
+- 中间验证：6项专项、10项流式测试通过；完整回归与候选实测由qsim-p1-validation.service执行，2核／4GiB、禁swap。日志/mnt/nas/qinml_cache/qsim/logs/p1_20261030/；结果/mnt/nas/qinml_cache/qsim/result/p1_20261030/。最终完整回归、交错A/B、冷应用缓存及实际PIT／checkpoint验收见下。
+- 中途退化处理：将每个小账户分别替换成通用聚合后，局部三次实测约1.10秒对原0.80秒，故用git restore --source=pre-p1-20261030恢复metrics.py，再只新增daily_curve_by_slot用于全日全部账户的批量汇总，原daily_curve保留。随后减少对齐中的整张混合dtype矩阵和重复选中行索引复制。两次调整后均重跑相关测试；没有把退化版本提交main。
+- 最终代码：qsim/data.py、source_cache.py、metrics.py、stream_runner.py、run_store.py、report.py。没有改alpha公式、交易核、PIT可用时间、checkpoint状态、资金费用口径或float64；不引入Numba／Polars。80项完整回归通过（all_final.log，172.584秒），包含新6项缓存／对齐／统计／存储测试；编辑器诊断和Git空白检查通过。
+- 真实f/p/c：configs/local_p1_livetest.toml为5分钟、6证券、2023-01-03至01-20，10日预热；f／p／c各6／2／3次比较PASS。最终报告result/p1_20261030/livetest_5m_final.json。代码变更有指纹边界，旧checkpoint需匹配旧代码恢复，不冒充账户续跑。
+- 最终三轮交错A/B：冻结01f679f包与最终工作区，fresh process、相同库和数值参数、plots／CSV开启；30分钟16日全A10组8时点，中位18.5469→10.9156秒，减少41.15%、1.70倍；1分钟2日全A10组240时点，中位49.0355→24.0733秒，减少50.91%、2.04倍。不要把不同窗口／频率直接互比，不外推多年吞吐。
+- 资源／I/O：三轮最大进程RSS分别353.1→360.8MiB、1470.9→1489.0MiB，小幅增加不称内存下降；Parquet文件数230→111、734→48，体积4,321,671→2,801,017及54,401,919→40,313,402字节。独立新应用缓存目录的30分钟单轮44.275→28.242秒；不清NAS／内核页缓存，不能称物理冷盘基准。
+- 数值验收：两频率三轮＋冷应用缓存共7组逐表对照全PASS，最大有限数值差0；key相关非数值列、字段、行数、执行限制计数相同。另补日频与5分钟StatsInterval实际对照，均PASS；Interval汇总末位差最高3.73e-9，在既有容差内，事件／期末持仓一致。原比较容差未放宽。
+- 证据：result/p1_20261030/ab_final/benchmark.json保存最终样本、阶段、CPU、RSS、I/O、文件数与逐轮比较；compatibility.json及compare_daily／compare_interval5.json保存补充核验。all_final.log、ab_final.log、final_resources.log在对应logs目录。
+- 运行保护：前检可用内存约44.7GiB，父cgroup无更低限额，用户允许500%CPU／空闲内存60%；最终整组实际硬限3核／6GiB、MemoryHigh4GiB、禁swap，每5秒监控。含测试／fpc／A/B／比对耗时12分10秒、CPU7分4秒，cgroup峰值2.1GiB，无swap和保护触发；qsim-p1-final及监控均正常退出。补充兼容性任务亦退出0，不遗留worker。
+- 留存：按用户要求在全部验收结束后统一提交P0工具、P1实现、测试和文档，之前只保留工作区修改及回滚标签。最终远端CI状态以该提交为准，不把本机通过预填为远端通过。附件FEATURES快照只读未改，未引入其逐笔特征功能。

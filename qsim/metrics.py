@@ -45,6 +45,33 @@ def daily_curve(events):
     return result
 
 
+def daily_curve_by_slot(events):
+    """Aggregate a complete day's independent accounts in one grouped pass.
+
+    Keep the original single-account daily_curve as the compatibility/reference
+    path: grouping many tiny frames separately costs more than the arithmetic.
+    """
+    frame=events.copy(deep=False)
+    frame['date']=pd.to_datetime(frame.timestamp).dt.strftime('%Y-%m-%d')
+    keys=['slot','book','date']
+    frame=frame.loc[frame[keys].notna().all(axis=1)]
+    last_cols=['equity','long','short','nHold']
+    sum_cols=['pnl','hold_pnl','trade_pnl','tradecost','turnover','net_turnover','exit_notional','age_notional']
+    # Actual boundary rows, including their NaNs, not skip-NaN first/last.
+    first=frame.drop_duplicates(keys,keep='first').set_index(keys)['previous_equity']
+    last=frame.drop_duplicates(keys,keep='last').set_index(keys)[last_cols]
+    sums=frame.groupby(keys,sort=True)[sum_cols].sum(min_count=0)
+    if np.isinf(frame[sum_cols].to_numpy(dtype=float)).any():
+        sums=frame.groupby(keys,sort=True)[sum_cols].agg(lambda column: column.sum())
+    result=last.join(first).join(sums).sort_index().reset_index()
+    result=result[last_cols+['book','date','previous_equity']+sum_cols+['slot']]
+    result['return']=result.pnl/result.previous_equity
+    result['tvr']=result.turnover/result.previous_equity
+    result['net_tvr']=result.net_turnover/result.previous_equity
+    result['net']=result.equity/result.groupby(['slot','book']).previous_equity.transform('first')
+    return result[[k for k in result.columns if k!='slot']+['slot']]
+
+
 def report_metrics(curve,diagnostics,config):
     rows=[]
     for book,full in curve.groupby('book',sort=False):

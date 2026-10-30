@@ -74,6 +74,8 @@ class RunStore:
         self.log_text=(self.directory/'run.log').open('x',buffering=1)
         self.counts=defaultdict(int);self.parts=defaultdict(int);self.empty={};self.bytes=0;self.timings=defaultdict(float)
         self.max_buffered_events=0;self.max_pending_labels=0;self.max_factor_buffer_rows=0
+        self.max_table_buffer_rows=0
+        self.csv_streams={}
         self.factor_chunks=[];self.factor_rows=0
         self.last_resource_check=0.
         self.validations=dict(no_signal_bars=0,min_signal_count=None,valid_ic_days=set(),traded_days=set(),max_accounting_error=0.)
@@ -117,13 +119,37 @@ class RunStore:
         frame=frame.copy()
         for col in ('label_end','label_status','slot','date','book','alpha_name','stage','order_book_id','instrument'):
             if col in frame: frame[col]=frame[col].astype('string')
-        target=self.directory/(name+'.parquet');target.mkdir(exist_ok=True)
+        target=self.directory/(name+'.parquet')
+        if self.parts[name]==0: target.mkdir(exist_ok=True)
         path=target/f'part-{self.parts[name]:08}.parquet'
         with self.stage('write'):
-            pq.write_table(pa.Table.from_pandas(frame,preserve_index=False),path,compression='zstd')
+            temporary=path.with_name('.'+path.name+'.tmp')
+            pq.write_table(pa.Table.from_pandas(frame,preserve_index=False),temporary,compression='zstd')
+            temporary.rename(path)
             if self.config['output']['csv'] and name not in ('events','positions','factors','final_positions'):
-                frame.to_csv(self.directory/(name+'.csv'),mode='a' if self.parts[name] else 'x',index=False,header=not self.parts[name])
+                if name not in self.csv_streams:
+                    self.csv_streams[name]=(self.directory/(name+'.csv')).open('x',newline='')
+                stream=self.csv_streams[name]
+                frame.to_csv(stream,index=False,header=not self.parts[name])
+                stream.flush()
         self.parts[name]+=1;self.counts[name]+=len(frame);self.bytes+=path.stat().st_size
+
+    def add_chunks(self,name,frames,max_rows=65536):
+        """Combine a finite/day-scoped iterable; never retain more than max_rows."""
+        if max_rows<1: raise ValueError('max_rows must be positive')
+        chunks=[];rows=0
+        for frame in frames:
+            if frame.empty:
+                self.add(name,frame)
+                continue
+            offset=0
+            while offset<len(frame):
+                end=min(len(frame),offset+max_rows-rows)
+                chunks.append(frame.iloc[offset:end].copy());rows+=end-offset;offset=end
+                self.max_table_buffer_rows=max(self.max_table_buffer_rows,rows)
+                if rows==max_rows:
+                    self.add(name,pd.concat(chunks,ignore_index=True));chunks.clear();rows=0
+        if chunks: self.add(name,pd.concat(chunks,ignore_index=True))
 
     def factors(self,when,symbols,model):
         if not self.config['output']['factors']: return
@@ -163,13 +189,15 @@ class RunStore:
         return {name:DiskTable(self.directory/(name+'.parquet'),count) for name,count in self.counts.items()}
 
     def finish(self,result):
+        self.close_csv()
         audit=result['audit']
         audit.update(run_id=self.run_id,phase_seconds=dict(self.timings),parquet_bytes=self.bytes,
             rows=dict(self.counts),resources=resources(),max_buffered_events=self.max_buffered_events,
-            max_pending_labels=self.max_pending_labels,max_factor_buffer_rows=self.max_factor_buffer_rows)
+            max_pending_labels=self.max_pending_labels,max_factor_buffer_rows=self.max_factor_buffer_rows,
+            max_table_buffer_rows=self.max_table_buffer_rows,parquet_parts=dict(self.parts))
         write_json(self.directory/'summary.json',result['summary'].to_dict('records'))
         write_json(self.directory/'audit.json',audit)
-        write_json(self.directory/'manifest.json',dict(status='complete',layout='partitioned_parquet',tables={k:dict(path=k+'.parquet',rows=v) for k,v in self.counts.items()}))
+        write_json(self.directory/'manifest.json',dict(status='complete',layout='partitioned_parquet',tables={k:dict(path=k+'.parquet',rows=v,parts=self.parts[k] or 1) for k,v in self.counts.items()}))
         (self.directory/'COMPLETE').write_text('All run outputs completed.\n')
         self.log('INFO','run_complete',elapsed_seconds=time.monotonic()-self.started,resources=resources())
         self.close()
@@ -181,5 +209,15 @@ class RunStore:
         write_json(self.directory/'failure.json',dict(phase=self.phase,context=self.current,exception=traceback.format_exc(),rows=dict(self.counts)))
         self.close()
 
+    def close_csv(self):
+        error=None
+        for stream in self.csv_streams.values():
+            try: stream.close()
+            except OSError as exc: error=exc
+        self.csv_streams.clear()
+        if error is not None: raise error
+
     def close(self):
-        self.log_json.close();self.log_text.close()
+        try: self.close_csv()
+        finally:
+            self.log_json.close();self.log_text.close()

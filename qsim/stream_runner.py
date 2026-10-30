@@ -12,7 +12,7 @@ from .data import MarketData
 from .engine import Ledger
 from .factors import FactorModel
 from .input_policy import file_hash
-from .metrics import correlation,daily_curve
+from .metrics import correlation,daily_curve,daily_curve_by_slot
 from .online_metrics import OnlineMetrics
 from .operations import groups_from_score
 from .run_store import RunStore,write_json
@@ -187,7 +187,7 @@ def _simulate(config,store,market,model,symbols,cohort,every):
             pending=remaining;store.max_pending_labels=max(store.max_pending_labels,len(pending))
             model.observe(data['close_adj']);index+=1
         elapsed=(pd.Timestamp(date)-pd.Timestamp(prior_date)).days if prior_date else 1
-        slot_curves=[];benchmark_curves=[]
+        benchmark_events=[];event_frames=[]
         for slot,ledger in ledgers.items():
             bench=benchmarks[slot]
             ledger.end_day(pd.Timestamp(date+' 15:00',tz='Asia/Shanghai'),day_index,day.eod_close,elapsed)
@@ -198,32 +198,32 @@ def _simulate(config,store,market,model,symbols,cohort,every):
             error=float((events.pnl-events.hold_pnl-events.trade_pnl+events.tradecost).abs().max())
             store.validations['max_accounting_error']=max(store.validations['max_accounting_error'],error)
             if error>1e-5: raise AssertionError('Streamed account does not reconcile')
-            curve=daily_curve(events)
-            for book,part in curve.groupby('book'):
-                first_equity.setdefault((slot,book),float(part.previous_equity.iloc[0]))
-                curve.loc[part.index,'net']=part.equity/first_equity[(slot,book)]
-            metrics.add_daily(curve,slot)
-            slot_curves.append(curve.assign(slot=slot))
-            store.add('events',events.assign(slot=slot))
-            bench_events=pd.DataFrame(bench.records).query('book == "G01"').copy();bench_events['book']='benchmark'
-            benchmark_curves.append(daily_curve(bench_events).assign(slot=slot))
+            event_frames.append(events.assign(slot=slot))
+            bench_events=pd.DataFrame([r for r in bench.records if r['book']=='G01']);bench_events['book']='benchmark'
+            benchmark_events.append(bench_events.assign(slot=slot))
             if config['output']['positions']:
                 rows=[dict(date=date,slot=slot,**r) for r in ledger.positions()]
                 store.add('positions',pd.DataFrame(rows))
             ledger.records.clear();bench.records.clear()
-        slot_daily=pd.concat(slot_curves,ignore_index=True)
+        slot_daily=daily_curve_by_slot(pd.concat(event_frames,ignore_index=True))
+        starts=[first_equity.setdefault((slot,book),float(initial))
+                for slot,book,initial in zip(slot_daily.slot,slot_daily.book,slot_daily.previous_equity)]
+        slot_daily['net']=slot_daily.equity.to_numpy()/np.asarray(starts)
+        for slot,part in slot_daily.groupby('slot',sort=False): metrics.add_daily(part,slot)
+        store.add_chunks('events',event_frames)
+        event_frames.clear()
         store.add('slot_daily',slot_daily)
         numeric=slot_daily.select_dtypes(include='number').columns.tolist()
         curve=slot_daily.groupby(['date','book'],as_index=False)[numeric].mean()
         curve['return']=curve.pnl/curve.previous_equity;curve['tvr']=curve.turnover/curve.previous_equity
         curve['net_tvr']=curve.net_turnover/curve.previous_equity
-        for book,part in curve.groupby('book'):
-            first_equity.setdefault(('main',book),float(part.previous_equity.iloc[0]))
-            curve.loc[part.index,'net']=part.equity/first_equity[('main',book)]
+        starts=[first_equity.setdefault(('main',book),float(initial))
+                for book,initial in zip(curve.book,curve.previous_equity)]
+        curve['net']=curve.equity.to_numpy()/np.asarray(starts)
         metrics.add_daily(curve)
         if curve.loc[curve.book.eq('LS'),'turnover'].gt(0).any(): store.validations['traded_days'].add(date)
         store.add('daily',curve)
-        bench_daily=pd.concat(benchmark_curves,ignore_index=True)
+        bench_daily=daily_curve_by_slot(pd.concat(benchmark_events,ignore_index=True))
         bench_daily=bench_daily.groupby(['date','book'],as_index=False)[bench_daily.select_dtypes(include='number').columns].mean()
         bench_daily['return']=bench_daily.pnl/bench_daily.previous_equity;bench_daily['net']=bench_daily.equity/b['capital']
         store.add('benchmark_daily',bench_daily)
@@ -248,9 +248,10 @@ def _simulate(config,store,market,model,symbols,cohort,every):
             store.add(name,pd.DataFrame(columns=['date','rank_ic','valid_labels','undefined_to_zero']))
     summary,slot_summary=metrics.tables()
     store.add('summary',summary);store.add('slot_summary',slot_summary)
-    for slot,ledger in ledgers.items():
-        store.add('final_positions',pd.DataFrame([dict(slot=slot,**r) for r in ledger.positions()],
-            columns=['slot','book','order_book_id','adjusted_units','mark_adj','market_value']))
+    store.add_chunks('final_positions',(
+        pd.DataFrame([dict(slot=slot,**r) for r in ledger.positions()],
+            columns=['slot','book','order_book_id','adjusted_units','mark_adj','market_value'])
+        for slot,ledger in ledgers.items()))
     audit=dict(schema_version=3,status='complete',mode=b['mode'],frequency=market.freq,schedule=b['frequency'],
         symbols=n,days=len(market.run_dates),bars=index,warmup_days=len(market.warmup_dates),portfolio_count=len(ledgers),
         summary_basis='comparison_mean' if every else 'single_cohort_portfolio' if cohort else 'single_interval_portfolio',

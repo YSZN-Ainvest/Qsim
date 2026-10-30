@@ -8,11 +8,12 @@ import numpy as np
 import pandas as pd
 
 
-def sampled(frame,limit=2000,books=1):
+def sampled(frame,limit=2000,books=1,columns=None):
     if isinstance(frame,pd.DataFrame):
+        if columns is not None and not frame.empty: frame=frame[columns]
         iterator=[frame];count=len(frame)
     else:
-        iterator=(batch.to_pandas() for batch in frame.iter_batches());count=len(frame)
+        iterator=(batch.to_pandas() for batch in frame.iter_batches(columns=columns));count=len(frame)
     stride=max(1,count//max(1,limit*books))
     counters={};selected={};last={}
     for chunk in iterator:
@@ -35,9 +36,10 @@ def plot_results(result,directory):
     from matplotlib.ticker import PercentFormatter
     config=result['config'];limit=config['output']['plot_points']
     summary=result['summary'];groups=summary.loc[summary.period.eq('ALL')&summary.book.str.startswith('G')].sort_values('book')
-    curve=sampled(result['daily'],limit,config['backtest']['groups']+3).sort_values(['book','date'])
+    curve=sampled(result['daily'],limit,config['backtest']['groups']+3,
+                  columns=['book','date','net','equity','previous_equity','tvr']).sort_values(['book','date'])
     curve['date']=pd.to_datetime(curve['date'])
-    diag=sampled(result['diagnostics'],limit)
+    diag=sampled(result['diagnostics'],limit,columns=['timestamp','ic','rank_ic'])
     caption='Net of configured costs; synthetic shorts; sampled curves when needed'
     def save(name,title,draw):
         fig,ax=plt.subplots(figsize=(12,5),layout='constrained')
@@ -64,7 +66,7 @@ def plot_results(result,directory):
     save('group_returns.png','Group cumulative net returns',lambda ax:ax.bar(groups.book,groups['return']))
     def excess(ax):
         if 'benchmark_daily' in result:
-            benchmark=sampled(result['benchmark_daily'],limit).sort_values('date')
+            benchmark=sampled(result['benchmark_daily'],limit,columns=['book','date','net']).sort_values('date')
             ax.bar(groups.book,groups.net/float(benchmark.net.iloc[-1])-1)
         else:
             ax.text(.05,.5,'Benchmark unavailable in legacy memory mode',transform=ax.transAxes)
