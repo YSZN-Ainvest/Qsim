@@ -33,7 +33,7 @@ def plot_results(result,directory):
     matplotlib.use('Agg')
     import matplotlib.pyplot as plt
     import matplotlib.dates as mdates
-    from matplotlib.ticker import PercentFormatter
+    from matplotlib.ticker import PercentFormatter, FuncFormatter, LogLocator, NullFormatter
     config=result['config'];limit=config['output']['plot_points']
     summary=result['summary'];groups=summary.loc[summary.period.eq('ALL')&summary.book.str.startswith('G')].sort_values('book')
     curve=sampled(result['daily'],limit,config['backtest']['groups']+3,
@@ -41,6 +41,33 @@ def plot_results(result,directory):
     curve['date']=pd.to_datetime(curve['date'])
     diag=sampled(result['diagnostics'],limit,columns=['timestamp','ic','rank_ic'])
     caption='Net of configured costs; synthetic shorts; sampled curves when needed'
+    colors=plt.get_cmap('coolwarm')(np.linspace(.05,.95,len(groups)))
+    group_colors=dict(zip(groups.book,colors))
+    def nav_axis(ax,values):
+        values=np.asarray(values,dtype=float)
+        if np.any(np.isfinite(values)&(values<=0)):
+            # Preserve exhausted/negative accounts instead of hiding them on log axes.
+            ax.set_yscale('symlog',linthresh=.01)
+            ax.set_ylabel('NAV (symlog; nonpositive values present)')
+        else:
+            ax.set_yscale('log')
+            ax.yaxis.set_major_locator(LogLocator(base=10,subs=(1,2,5)))
+            ax.yaxis.set_minor_formatter(NullFormatter())
+            ax.set_ylabel('NAV (log scale)')
+        ax.yaxis.set_major_formatter(FuncFormatter(lambda value,pos:f'{value:g}'))
+        ax.axhline(1,color='#64748b',lw=.8,ls='--',alpha=.7)
+    def group_bars(ax,values):
+        values=np.asarray(values,dtype=float)
+        ax.set_yscale('symlog',linthresh=.01,linscale=1)
+        bars=ax.bar(np.arange(len(groups)),values,color=colors,width=.72)
+        ax.axhline(0,color='#475569',lw=.9)
+        ax.set_ylabel('Return (symlog; linear within ±1%)')
+        ax.margins(y=.18)
+        for bar,value in zip(bars,values):
+            if np.isfinite(value):
+                ax.annotate(f'{value:+.1%}',(bar.get_x()+bar.get_width()/2,value),
+                            xytext=(0,5 if value>=0 else -5),textcoords='offset points',
+                            ha='center',va='bottom' if value>=0 else 'top',fontsize=8)
     def save(name,title,draw):
         fig,ax=plt.subplots(figsize=(12,5),layout='constrained')
         draw(ax);ax.set_title(title+'\n'+caption,fontsize=10);ax.grid(alpha=.2)
@@ -55,19 +82,24 @@ def plot_results(result,directory):
             ax.yaxis.set_major_formatter(PercentFormatter(1.))
         fig.savefig(directory/name,dpi=150);plt.close(fig)
     ls=curve.loc[curve.book.eq('LS')]
-    save('long_short_nav.png','Long-short NAV (initial = 1)',lambda ax:ax.plot(ls.date,ls.net))
+    def ls_line(ax):
+        ax.plot(ls.date,ls.net,color='#334155',lw=1.6)
+        nav_axis(ax,ls.net)
+    save('long_short_nav.png','Long-short NAV (initial = 1)',ls_line)
     initial=float(ls.previous_equity.iloc[0])
     save('long_short_pnl.png','Long-short cumulative PnL (CNY)',lambda ax:ax.plot(ls.date,ls.equity-initial))
     def group_lines(ax):
         for name,part in curve.loc[curve.book.str.startswith('G')].groupby('book'):
-            ax.plot(part.date,part.net,label=name)
-        ax.legend(ncol=5,fontsize=8)
-    save('group_nav.png','Group NAV (G01 = lowest score)',group_lines)
-    save('group_returns.png','Group cumulative net returns',lambda ax:ax.bar(groups.book,groups['return']))
+            edge=name in (groups.book.iloc[0],groups.book.iloc[-1])
+            ax.plot(part.date,part.net,label=name,color=group_colors[name],lw=1.8 if edge else 1.1,alpha=1 if edge else .85)
+        nav_axis(ax,curve.loc[curve.book.str.startswith('G'),'net'])
+        ax.legend(ncol=5,fontsize=8,loc='upper center',bbox_to_anchor=(.5,-.15),frameon=False)
+    save('group_nav.png','Group NAV (blue = lowest score; red = highest score)',group_lines)
+    save('group_returns.png','Group cumulative net returns (factor-rank order)',lambda ax:group_bars(ax,groups['return']))
     def excess(ax):
         if 'benchmark_daily' in result:
             benchmark=sampled(result['benchmark_daily'],limit,columns=['book','date','net']).sort_values('date')
-            ax.bar(groups.book,groups.net/float(benchmark.net.iloc[-1])-1)
+            group_bars(ax,groups.net/float(benchmark.net.iloc[-1])-1)
         else:
             ax.text(.05,.5,'Benchmark unavailable in legacy memory mode',transform=ax.transAxes)
     save('group_excess_returns.png','Relative return: group NAV / equal-weight eligible-universe NAV - 1',excess)

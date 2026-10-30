@@ -5,6 +5,7 @@
 ## 1. 当前交接点
 
 - 最后核对日期：2026-10-30，上海时区。
+- 最新绘图迭代：分组／LS净值默认对数轴，收益／超额柱状图用对称对数轴（±1%内线性）并标注实际百分比；按组号蓝→红配色。两份README示例共8张图已从冻结结果重绘，源数据、收益、组别及费用不变；证据见末尾记录。
 - 项目：`/home/qinml/qsim`；Python 包版本 `0.3.0`。
 - 仓库：<https://github.com/YSZN-Ainvest/Qsim>；origin 为 `https://github.com/YSZN-Ainvest/Qsim.git`。
 - 本文建立前的代码基线：`eb183c1b8c43136af874696c174fed5d8622dcd1`，提交说明 `docs: simplify setup and backtest documentation`。这不是要求未来回退到该提交。
@@ -646,3 +647,12 @@ Arrow 等库是否接受环境变量以及实际线程数要核实，大型任�
 - 验证：冻结实盘输入的小样本35.6万条同键输出（2782条有限值）精确反号；完整969日的数据版本／覆盖相同，年度及ALL的IC、Rank IC反号，观测数一致。65条汇总、slot_daily主账户均值、IC及逐事件损益独立复算PASS，最大对账误差5.79e-9。证据logs/readme_l1_negative_20261030/sign_check.json、full_comparison.json和tmp/readme_l1_negative_20261030/readme_30m_l1_4y_verified.json；上述路径均在NAS的qsim目录下。
 - 资源：预检可用内存约36GiB、CPU约98%空闲，可见父cgroup无更低限额；2核／4GiB，MemoryHigh3GiB、禁swap，每5秒监控。回测自身942.995秒，初始化1.794秒（命中已有索引）；unit总953.808秒、CPU417.964秒、cgroup峰值3GiB、进程峰值400.6MiB、无swap。运行与监控正常退出，没有本轮遗留worker。
 - 交付：更新7张原始PNG、2张真实stdout终端图、README、年度表、输入说明和来源记录；日频示例保持不变。原始／processed分量dump仍是原方向，组合分数按配置取负，文档已明确。生产qsim包未修改；保持既有main交付约定，最终Git与远端CI状态以实际记录为准。
+
+### 2026-10-30 — 对数净值与对称对数分组收益展示
+
+- 用户要求调整README图表以便观察分层，并询问默认费用是否应设为0。保留fee_bps=5（买卖各0.05%）、其余费用默认0；仅作展示调整，没有为美观更改回测费用、因子、组号或收益。此前四个alpha筛选及分层逻辑诊断尚未完成，本轮没有声称已完成。
+- 实现：qsim/report.py将分组和LS净值改为对数轴；遇非正净值明确使用symlog保留记录。分组收益和超额使用symlog、linthresh=0.01，标注真实百分比；按因子组号从蓝到红配色，强调首尾组，图例移出曲线区。金额PnL、IC、换手保持线性。无交易或统计公式变化，无版本号变更。
+- 重绘：scripts/replot_readme_log.py只读取两份已完成运行的CSV／JSON，在新NAS目录生成图像，替换各4张授权文档素材。原运行目录和历史图片不覆盖。每张净值线和收益柱的原始数值逐项与输入一致；横轴组号一致；输入文件重绘前后SHA256一致。README、OUTPUTS、完整图集和素材来源同步说明坐标含义。
+- 验证：既有test_streaming.StreamingTests.test_factor_dump_schema_logs_json_and_single_pngs通过（1项，3.722秒）；真实两例重绘核验PASS，目视检查两例分组线图和收益柱图，标签／图例完整。未重跑多年回测或完整回归。git diff --check通过。
+- 证据：/mnt/nas/qinml_cache/qsim/result/log_plots_20261030_182545_477585/verification.json及同目录新图；专项日志/mnt/nas/qinml_cache/qsim/logs/log_plots_20261030/plot_test.log。仅小型汇总表重绘，数值库单线程，进程峰值RSS302700KiB（约296MiB）；重绘与专项进程均正常退出，无后台任务。缓存／临时文件均配置到NAS。未提交或推送。
+- 留存：用户随后明确要求提交并推送。本次仅提交上述绘图实现、重绘脚本、8张授权素材及相关文档到main，费用配置不变；沿用已通过的绘图专项与真实数值核验，不重复多年回测。提交主题为`feat: use logarithmic scales for backtest charts`，远端同步及CI状态以实际Git／Actions记录为准。
