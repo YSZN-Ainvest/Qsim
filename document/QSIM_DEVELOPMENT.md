@@ -22,6 +22,7 @@
 - CI 修复：e6b6276 的工作流因 job.env 不支持 runner.temp 在测试启动前被拒绝；bcdf0a4 将缓存变量移至测试 step.env，远端 run 40837614274 全部 71 项通过（34.945 秒，无跳过）。本机测试通过不等于工作流有效。
 - Git 留存：用户已授权更新提交并同步 GitHub；最新版统一交付到 main，本轮同步记录见第 12 节末尾。
 - 最新性能事项：P0＋P1本机验收完成，80项回归、真实5分钟f/p/c、三轮30分钟／1分钟A/B及日频／Interval补充对照通过，结果见PERFORMANCE_RESULTS。回滚基线pre-p1-20261030／01f679f保留；曾退化的小表聚合已恢复，最终方案按日批量汇总。相关任务与监控均已退出。
+- 后续中性化优化：用户仅批准多因子暴露准备复用，qsim/operations.py增加当期有界共享上下文，FactorModel按决策创建；保留独立OLS和单因子路径，无新增配置、无Numba或滚动窗口改动。6项专项、86项完整回归及局部基准通过；用户已批准提交并同步main，详情见末尾本次记录。
 
 ### 接手顺序
 
@@ -605,3 +606,13 @@ Arrow 等库是否接受环境变量以及实际线程数要核实，大型任�
 - 证据：result/p1_20261030/ab_final/benchmark.json保存最终样本、阶段、CPU、RSS、I/O、文件数与逐轮比较；compatibility.json及compare_daily／compare_interval5.json保存补充核验。all_final.log、ab_final.log、final_resources.log在对应logs目录。
 - 运行保护：前检可用内存约44.7GiB，父cgroup无更低限额，用户允许500%CPU／空闲内存60%；最终整组实际硬限3核／6GiB、MemoryHigh4GiB、禁swap，每5秒监控。含测试／fpc／A/B／比对耗时12分10秒、CPU7分4秒，cgroup峰值2.1GiB，无swap和保护触发；qsim-p1-final及监控均正常退出。补充兼容性任务亦退出0，不遗留worker。
 - 留存：按用户要求在全部验收结束后统一提交P0工具、P1实现、测试和文档，之前只保留工作区修改及回滚标签。最终远端CI状态以该提交为准，不把本机通过预填为远端通过。附件FEATURES快照只读未改，未引入其逐笔特征功能。
+
+### 2026-10-30 — 多因子中性化准备复用
+
+- 范围：用户强调只做多因子中性化共享准备；基线main为ce05ace，开始时工作区干净。保留现有neutralize／process独立求解参考，新增NeutralizationContext，仅FactorModel同一compute的多个因子共享；未引入矩阵分解复用、Numba、原始因子计算优化或账户修改。
+- 语义：先按原流程截尾，再以因子及暴露共同有限的掩码选择回归样本；行业编码仍在全快照上drop_first，标准化仍按各有效截面计算。相同掩码才共享只读标准化设计矩阵，OLS仍使用lstsq(rcond=None)。最多缓存8种掩码、16 MiB矩阵／键；基础矩阵、并发中的数组及求解工作区不属于该缓存额度。线程锁仅保护准备与缓存，不覆盖回归。每个时点重新构建，checkpoint无新增状态，旧检查点仍受代码指纹限制。
+- 验证：新增6项测试，覆盖缺失／Inf、秩亏／常数、掩码差异与淘汰、输入不被改写、处理顺序、双线程、时变外部因子／行业／风格；实际磁盘构造5分钟行情的f/p/c各4/2/2次比较PASS，c为真实子进程。参考／新版串行／双线程逐值一致。专项耗时22.874秒，日志logs/neutralization_20261030/focused.log；完整86项回归通过（199.821秒），regression.log保存结果。4个新改Python文件编辑器无诊断，git diff --check通过。
+- 基准：scripts/benchmark_neutralization.py固定种子319、5000证券／5风格／30行业，单线程数值库、交错三轮；20／100因子同截面Operations中位0.1563→0.0468、0.6605→0.2087秒，3.34／3.16倍；4种截面分别2.35／2.76倍。所有输出和分组逐值一致，最大差0。单因子保持原路径，不以约3%的毫秒计时波动宣称改进或退化。非端到端结果，不外推真实全部风格数据或所有不同掩码。
+- 资源与证据：预检MemAvailable约40.5 GiB、CPU约94%空闲、可见父cgroup无更低配额；专项／全回归2核3GiB、基准1核1GiB，禁swap。基准9.631秒，进程峰值RSS212.9 MiB；unit结束报告MemoryPeak为0B，不当作实际零占用。JSON在result/neutralization_20261030/benchmark.json，测试和运行日志在logs/neutralization_20261030/，构造数据／livetest报告在tmp/neutralization_20261030/。全部位于NAS项目根目录。
+- 完整回归unit实际耗时3分20.329秒、CPU56.867秒、cgroup峰值250.1 MiB、swap为0，正常退出。最终三个unit均inactive、MainPID=0，无本轮遗留worker；系统MemAvailable约39.3 GiB。附件只读未改。
+- 留存：用户在验收后明确要求“git吧”，本次代码、6项测试、基准工具及文档统一提交并同步main；原始结果仍在NAS。远端CI以本提交的GitHub Actions记录为准，不将本机通过预填为远端通过。

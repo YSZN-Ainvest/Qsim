@@ -6,7 +6,7 @@ from copy import deepcopy
 import numpy as np
 
 from .expressions import Expression,dependency_levels
-from .operations import process
+from .operations import NeutralizationContext,process
 from .pit_store import PITRegistry
 from .resources import allowed_workers
 
@@ -82,7 +82,14 @@ class FactorModel:
         common=np.asarray(eligible,dtype=bool).copy()
         for name in active: common &= np.isfinite(raw[name])
         names=[f['name'] for f in self.specs]
-        transformed=self._map(lambda name:process(raw[name],common,self.config['operations'],exposures),names)
+        options=self.config['operations']
+        # Scope is deliberately one decision, after advancing the PIT snapshot.
+        # No future snapshot, mutable cache or lock enters the checkpoint.
+        neutralization=(NeutralizationContext(exposures[options['neutralize_styles']],
+                            exposures[options['neutralize_industries']])
+                        if exposures is not None and len(names)>1 else None)
+        transformed=self._map(lambda name:process(raw[name],common,options,exposures,
+                              neutralization=neutralization),names)
         processed=dict(zip(names,transformed))
         values=raw if self.config['combine']['stage']=='raw' else processed
         if self.combination:
