@@ -12,8 +12,8 @@
 
 ### 当前长区间示例
 
-- 配置：[日频](../../configs/readme_daily_5y.toml)、[30分钟](../../configs/readme_30m_l1_4y.toml)。日频2021–2025年固定5日反转；分钟2022–2025年买卖一档不平衡度，均历史全A池、10组。
-- 运行ID：`readme_daily_reversal5_candidate_20261030_135734_607571_82bfa4e9`、`readme_30m_l1_4y_20261030_142653_560352_6f7f7645`；两者均COMPLETE，分别有1／6套StatsEvery时点策略。完整统计与验证见[长区间示例](../FIVE_YEAR_EXAMPLES.md)。
+- 配置：[日频](../../configs/readme_daily_5y.toml)、[30分钟](../../configs/readme_30m_l1_4y.toml)。日频2021–2025年固定5日反转；分钟2022–2025年负向买卖一档不平衡度，均历史全A池、10组。
+- 运行ID：`readme_daily_reversal5_candidate_20261030_135734_607571_82bfa4e9`、`readme_30m_l1_4y_20261030_160015_832678_7a6fb02b`；两者均COMPLETE，分别有1／6套StatsEvery时点策略。完整统计与验证见[长区间示例](../FIVE_YEAR_EXAMPLES.md)。
 - `readme_daily_5y_*.png`、`readme_30m_l1_4y_*.png`中的七张结果图逐字节复制自运行目录，未修改净值或裁剪年份。
 - terminal／terminal_details为同次CLI真实stdout的上／下半摘要排版截图；标题显示可复现的公开配置命令，数值保持原样。原始日志与临时HTML留NAS。
 - 原组合取负后的日频实跑仍亏损，随后固定测试5日反转，保留相同日期／池／费用；最终日频+30.06%，分钟−64.01%，未通过修改曲线制造盈利。

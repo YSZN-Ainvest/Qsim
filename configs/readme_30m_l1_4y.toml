@@ -43,7 +43,8 @@ column = "depth_imbalance_1_last"
 weight = 1.0
 
 [combine]
-expression = "<l1_imbalance>"
+# Reverse the signal without rewriting the original PIT input table.
+expression = "-<l1_imbalance>"
 stage = "processed"
 
 [operations]
